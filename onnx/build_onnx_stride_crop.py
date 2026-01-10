@@ -164,7 +164,7 @@ def build_algo_coeffs():
         outs,
         inits
     )
-    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 11)], ir_version=7)
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)], ir_version=7)
     onnx.checker.check_model(model)
     return model
 
