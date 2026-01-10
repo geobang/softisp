@@ -172,7 +172,8 @@ def build_ruleengine(gammaN=256, model_name="ruleengine_full.onnx"):
     model = helper.make_model(
         graph,
         producer_name="ruleengine_builder",
-        opset_imports=[helper.make_operatorsetid("", 13)]
+        opset_imports=[helper.make_operatorsetid("", 13)],
+        ir_version=11
     )
 
     onnx.checker.check_model(model)

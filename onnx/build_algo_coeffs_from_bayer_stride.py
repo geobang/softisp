@@ -163,7 +163,7 @@ def build_algo_coeffs_stride_crop():
         outputs=outs,
         initializer=inits
     )
-    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)], ir_version=7)
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)], ir_version=11)
     onnx.checker.check_model(model)
     return model
 
