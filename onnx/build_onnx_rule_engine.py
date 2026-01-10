@@ -1,7 +1,8 @@
 import onnx
-from onnx import helper, TensorProto, numpy_helper
-import subprocess
+from onnx import helper, TensorProto
+import subprocess, shutil
 
+# ---- Helpers ----
 def const_scalar(name, value):
     return helper.make_node(
         "Constant", [], [name],
@@ -16,18 +17,6 @@ def const_axes(name, axes):
 
 def neg_scalar(input_name, output_name):
     return helper.make_node("Neg", [input_name], [output_name])
-
-def clamp_scalar(x, xmin, xmax, out):
-    return helper.make_node("Clip", [x, xmin, xmax], [out])
-
-def broadcast_mul(a, b, out):
-    return helper.make_node("Mul", [a, b], [out])
-
-def broadcast_add(a, b, out):
-    return helper.make_node("Add", [a, b], [out])
-
-def broadcast_sub(a, b, out):
-    return helper.make_node("Sub", [a, b], [out])
 
 def make_input(name, shape):
     return helper.make_tensor_value_info(name, TensorProto.FLOAT, shape)
@@ -47,21 +36,30 @@ def rate_limit_vector(raw, prev, step, out):
     add = helper.make_node("Add", [prev, clip.output[0]], [out])
     return [delta, neg_step, clip, add]
 
-def where_scalar(cond, a, b, out):
-    return helper.make_node("Where", [cond, a, b], [out])
-
 def reduce_mean_vec(x, out):
     return helper.make_node("ReduceMean", [x], [out], keepdims=0)
 
 def div_vector(a, b, out):
     return helper.make_node("Div", [a, b], [out])
 
-def min_scalar(a, b, out):
-    return helper.make_node("Min", [a, b], [out])
-
 def max_scalar(a, b, out):
     return helper.make_node("Max", [a, b], [out])
 
+# ---- Arithmetic blend helper ----
+def blend_alpha(base_alpha, fast_alpha, scene_change, out_name):
+    alpha_eff_min = out_name + "_eff_min"
+    maxn = helper.make_node("Max", [base_alpha, fast_alpha], [alpha_eff_min])
+
+    one = const_scalar(out_name + "_one", 1.0)
+    one_minus = helper.make_node("Sub", [one.output[0], scene_change], [out_name + "_one_minus"])
+
+    term_fast = helper.make_node("Mul", [scene_change, alpha_eff_min], [out_name + "_term_fast"])
+    term_base = helper.make_node("Mul", [one_minus.output[0], base_alpha], [out_name + "_term_base"])
+    add = helper.make_node("Add", [term_fast.output[0], term_base.output[0]], [out_name])
+
+    return [maxn, one, one_minus, term_fast, term_base, add]
+
+# ---- Builder ----
 def build_ruleengine(gammaN=256, model_name="ruleengine_full.onnx"):
     nodes = []
 
@@ -105,88 +103,48 @@ def build_ruleengine(gammaN=256, model_name="ruleengine_full.onnx"):
     # WB normalize
     wb_mean = "wb_mean"
     nodes.append(reduce_mean_vec("raw_wb", wb_mean))
-    axes_const = const_axes("wb_mean_axes", [0])
-    nodes.append(axes_const)
-    wb_mean_expand = helper.make_node("Unsqueeze", [wb_mean, "wb_mean_axes"], ["wb_mean_u"])
-    nodes.append(wb_mean_expand)
+    axes_const = const_axes("wb_mean_axes", [0]); nodes.append(axes_const)
+    wb_mean_expand = helper.make_node("Unsqueeze", [wb_mean, "wb_mean_axes"], ["wb_mean_u"]); nodes.append(wb_mean_expand)
     wb_norm = "wb_norm"
     nodes.append(div_vector("raw_wb", "wb_mean_u", wb_norm))
 
-    # Adaptive alpha
-    alpha_wb_eff_min = "alpha_wb_eff_min"
-    nodes.append(max_scalar("alpha_wb", "alpha_fast", alpha_wb_eff_min))
-    alpha_wb_eff = "alpha_wb_eff"
-    nodes.append(where_scalar("scene_change", alpha_wb_eff_min, "alpha_wb", alpha_wb_eff))
-
-    # EMA + RL + blend + clamp
-    nodes += ema_vector(wb_norm, "prev_wb", alpha_wb_eff, "wb_ema")
+    # WB alpha blend
+    nodes += blend_alpha("alpha_wb", "alpha_fast", "scene_change", "alpha_wb_eff")
+    nodes += ema_vector(wb_norm, "prev_wb", "alpha_wb_eff", "wb_ema")
     nodes += rate_limit_vector(wb_norm, "prev_wb", "wb_step", "wb_rl")
     half = const_scalar("half", 0.5); nodes.append(half)
-    wb_sum = helper.make_node("Add", ["wb_ema", "wb_rl"], ["wb_sum"]); nodes.append(wb_sum)
-    wb_blend = helper.make_node("Mul", ["wb_sum", half.output[0]], ["wb_blend"]); nodes.append(wb_blend)
-    wb_stab = helper.make_node("Clip", ["wb_blend", "wb_min", "wb_max"], ["wb_stab"]); nodes.append(wb_stab)
+    nodes.append(helper.make_node("Add", ["wb_ema", "wb_rl"], ["wb_sum"]))
+    nodes.append(helper.make_node("Mul", ["wb_sum", half.output[0]], ["wb_blend"]))
+    nodes.append(helper.make_node("Clip", ["wb_blend", "wb_min", "wb_max"], ["wb_stab"]))
 
-    # CCM
-    alpha_ccm_eff_min = "alpha_ccm_eff_min"
-    nodes.append(max_scalar("alpha_ccm", "alpha_fast", alpha_ccm_eff_min))
-    alpha_ccm_eff = "alpha_ccm_eff"
-    nodes.append(where_scalar("scene_change", alpha_ccm_eff_min, "alpha_ccm", alpha_ccm_eff))
-    nodes += ema_vector("raw_ccm", "prev_ccm", alpha_ccm_eff, "ccm_ema")
-    ccm_stab = helper.make_node("Clip", ["ccm_ema", "ccm_min", "ccm_max"], ["ccm_stab"]); nodes.append(ccm_stab)
+    # CCM alpha blend
+    nodes += blend_alpha("alpha_ccm", "alpha_fast", "scene_change", "alpha_ccm_eff")
+    nodes += ema_vector("raw_ccm", "prev_ccm", "alpha_ccm_eff", "ccm_ema")
+    nodes.append(helper.make_node("Clip", ["ccm_ema", "ccm_min", "ccm_max"], ["ccm_stab"]))
 
-    # Gamma
-    alpha_gamma_eff_min = "alpha_gamma_eff_min"
-    nodes.append(max_scalar("alpha_gamma", "alpha_fast", alpha_gamma_eff_min))
-    alpha_gamma_eff = "alpha_gamma_eff"
-    nodes.append(where_scalar("scene_change", alpha_gamma_eff_min, "alpha_gamma", alpha_gamma_eff))
-    nodes += ema_vector("raw_gamma", "prev_gamma", alpha_gamma_eff, "gamma_ema")
-    gamma_stab = helper.make_node("Clip", ["gamma_ema", "gamma_min", "gamma_max"], ["gamma_stab"]); nodes.append(gamma_stab)
+    # Gamma alpha blend
+    nodes += blend_alpha("alpha_gamma", "alpha_fast", "scene_change", "alpha_gamma_eff")
+    nodes += ema_vector("raw_gamma", "prev_gamma", "alpha_gamma_eff", "gamma_ema")
+    nodes.append(helper.make_node("Clip", ["gamma_ema", "gamma_min", "gamma_max"], ["gamma_stab"]))
 
-    # Sharpness
-    # -------- Sharpness: sensor-aware modulation + EMA + rate limit + clamp --------
-    # noise_factor = clamp(analog_gain, 1.0, 16.0)
+    # Sharpness alpha blend
     gain_min = const_scalar("gain_min", 1.0); nodes.append(gain_min)
     gain_max = const_scalar("gain_max", 16.0); nodes.append(gain_max)
-    gain_clamped = helper.make_node(
-        "Clip", ["analog_gain", gain_min.output[0], gain_max.output[0]], ["noise_factor"]
-    )
-    nodes.append(gain_clamped)
-
-    # target_sharp = raw_sharpness / noise_factor
-    target_sharp = helper.make_node("Div", ["raw_sharpness", "noise_factor"], ["target_sharp"])
-    nodes.append(target_sharp)
-
-    # Adaptive alpha
-    alpha_sharp_eff_min = "alpha_sharp_eff_min"
-    nodes.append(max_scalar("alpha_sharp", "alpha_fast", alpha_sharp_eff_min))
-    alpha_sharp_eff = "alpha_sharp_eff"
-    nodes.append(where_scalar("scene_change", alpha_sharp_eff_min, "alpha_sharp", alpha_sharp_eff))
-
-    # EMA
-    nodes += ema_vector("target_sharp", "prev_sharpness", alpha_sharp_eff, "sharp_ema")
-
-    # Rate limit
+    nodes.append(helper.make_node("Clip", ["analog_gain", gain_min.output[0], gain_max.output[0]], ["noise_factor"]))
+    nodes.append(helper.make_node("Div", ["raw_sharpness", "noise_factor"], ["target_sharp"]))
+    nodes += blend_alpha("alpha_sharp", "alpha_fast", "scene_change", "alpha_sharp_eff")
+    nodes += ema_vector("target_sharp", "prev_sharpness", "alpha_sharp_eff", "sharp_ema")
     nodes += rate_limit_vector("target_sharp", "prev_sharpness", "sharp_step", "sharp_rl")
+    nodes.append(helper.make_node("Add", ["sharp_ema", "sharp_rl"], ["sharp_sum"]))
+    nodes.append(helper.make_node("Mul", ["sharp_sum", half.output[0]], ["sharp_blend"]))
+    nodes.append(helper.make_node("Clip", ["sharp_blend", "gamma_min", "gamma_max"], ["sharpness_stab"]))
 
-    # Blend EMA/RL and clamp
-    sharp_sum = helper.make_node("Add", ["sharp_ema", "sharp_rl"], ["sharp_sum"]); nodes.append(sharp_sum)
-    sharp_blend = helper.make_node("Mul", ["sharp_sum", half.output[0]], ["sharp_blend"]); nodes.append(sharp_blend)
-    sharpness_stab = helper.make_node("Clip", ["sharp_blend", "gamma_min", "gamma_max"], ["sharpness_stab"])
-    nodes.append(sharpness_stab)
-
-    # -------- NR: sensor-aware modulation + EMA + clamp --------
-    # target_nr = raw_nr * noise_factor
-    target_nr = helper.make_node("Mul", ["raw_nr", "noise_factor"], ["target_nr"])
-    nodes.append(target_nr)
-
-    alpha_nr_eff_min = "alpha_nr_eff_min"
-    nodes.append(max_scalar("alpha_nr", "alpha_fast", alpha_nr_eff_min))
-    alpha_nr_eff = "alpha_nr_eff"
-    nodes.append(where_scalar("scene_change", alpha_nr_eff_min, "alpha_nr", alpha_nr_eff))
-
-    nodes += ema_vector("target_nr", "prev_nr", alpha_nr_eff, "nr_ema")
-    nr_stab = helper.make_node("Clip", ["nr_ema", "nr_min", "nr_max"], ["nr_stab"])
-    nodes.append(nr_stab)
+    # NR alpha blend
+    # -------- NR alpha blend --------
+    nodes.append(helper.make_node("Mul", ["raw_nr", "noise_factor"], ["target_nr"]))
+    nodes += blend_alpha("alpha_nr", "alpha_fast", "scene_change", "alpha_nr_eff")
+    nodes += ema_vector("target_nr", "prev_nr", "alpha_nr_eff", "nr_ema")
+    nodes.append(helper.make_node("Clip", ["nr_ema", "nr_min", "nr_max"], ["nr_stab"]))
 
     # -------- Outputs --------
     out_wb = helper.make_tensor_value_info("wb_stab", TensorProto.FLOAT, [3])
@@ -210,18 +168,33 @@ def build_ruleengine(gammaN=256, model_name="ruleengine_full.onnx"):
         [out_wb, out_ccm, out_gamma, out_sharp, out_nr],
     )
 
-    model = helper.make_model(graph, producer_name="ruleengine_builder")
+    # Build model with opset 23 for runtime compatibility
+    model = helper.make_model(
+        graph,
+        producer_name="ruleengine_builder",
+        opset_imports=[helper.make_operatorsetid("", 23)]
+    )
+
     onnx.checker.check_model(model)
     onnx.save(model, model_name)
     return model
 
-# -------- Export helpers --------
+# ---- Export functions ----
 def export_ncnn(onnx_file, param_file, bin_file):
-    subprocess.run(["onnx2ncnn", onnx_file, param_file, bin_file], check=True)
+    exe = shutil.which("pnnx")
+    if exe is None:
+        print("pnnx not found. Install with: pip install pnnx")
+        return None
+    subprocess.run([exe, onnx_file], check=True)
 
 def export_mnn(onnx_file, mnn_file):
+    exe = shutil.which("MNNConvert")
+    if exe is None:
+        print("MNNConvert not found.")
+        return None
     subprocess.run(["MNNConvert", "-f", "ONNX", "--modelFile", onnx_file, "--MNNModel", mnn_file], check=True)
 
+# ---- Main ----
 if __name__ == "__main__":
     model = build_ruleengine(gammaN=256, model_name="ruleengine_full.onnx")
     print("Saved ruleengine_full.onnx")
