@@ -1,0 +1,77 @@
+{
+  "canonical_name": "softisp_pipeline_test",
+  "pipeline": [
+    {
+      "stage": 1,
+      "block": "blacklevel",
+      "version": "v1",
+      "coeff_names": ["offset"]
+    },
+    {
+      "stage": 2,
+      "block": "demosaic",
+      "version": "v1",
+      "coeff_names": []
+    },
+    {
+      "stage": 4,
+      "block": "wbapplier",
+      "version": "v1",
+      "coeff_names": []
+    },
+    {
+      "stage": 5,
+      "block": "ccm",
+      "version": "v1",
+      "coeff_names": ["matrix"]
+    },
+    {
+      "stage": 6,
+      "block": "ccmapplier",
+      "version": "v1",
+      "coeff_names": []
+    },
+    {
+      "stage": 7,
+      "block": "lensdispatcher",
+      "version": "v1",
+      "coeff_names": ["lens_params"]
+    },
+    {
+      "stage": 8,
+      "block": "gammaidentity",
+      "version": "v1",
+      "coeff_names": []
+    },
+    {
+      "stage": 9,
+      "block": "tone",
+      "version": "v1",
+      "coeff_names": ["curve"]
+    },
+    {
+      "stage": 10,
+      "block": "cropresize",
+      "version": "v1",
+      "coeff_names": ["crop_rect", "resize_factor"]
+    },
+    {
+      "stage": 11,
+      "block": "resize",
+      "version": "v1",
+      "coeff_names": ["resize_factor"]
+    },
+    {
+      "stage": 12,
+      "block": "yuvconvert",
+      "version": "v1",
+      "coeff_names": []
+    },
+    {
+      "stage": 13,
+      "block": "chromasubsample",
+      "version": "v1",
+      "coeff_names": []
+    }
+  ]
+}
