@@ -1,73 +1,45 @@
-# demosaic_base.py
-from onnx import helper, TensorProto
-from .base import MicroblockBase
+import onnx.helper as oh
+from microblocks.base import MicroblockBase
 
 class DemosaicBase(MicroblockBase):
     """
-    Base demosaic microblock.
-    Contract:
-      - Consumes stride-free, black-level-corrected Bayer: [image, h, w, c=1]
-      - Produces RGB image: [image, h, w, c=3]
-    Notes:
-      - Subclasses must provide the actual kernel initializers and Conv node wiring.
-      - This base sets the canonical declared contract and op scaffolding.
+    Microblock that performs Bayer demosaicing.
+    Input:  [n,4,h,width]  (RGGB mosaic channels)
+    Output: [n,3,h,width]  (RGB image)
+    Needs:  None (parameters are fixed for bilinear demo)
     """
 
     name = "demosaic_base"
     version = "v0"
-    coeff_names = ["image", "h", "w", "c"]
-    output_coeff_names = ["image", "h", "w", "c"]
-    process_method = "Conv"
-    depends_on = ["blacklevel_v2"]  # ensure BLC precedes demosaic
+    deps = ["black_level_base"]   # typically comes after black level correction
+    needs = ["kernels"]
 
-    def __init__(self, dtype: int = TensorProto.FLOAT):
-        super().__init__()
-        self.dtype = dtype
+    def build_applier(self, stage: str, prev_stages=None):
+        out_name = f"{stage}.applier"
 
-    def build_algo(self, prev_out: str):
-        # Canonical declaration: we will output RGB via Conv.
-        # Kernel is provided by subclass (e.g., demosaic_v2).
-        return {
-            "op_type": "Conv",
-            "inputs": [prev_out, "Raw.demosaic_kernel"],
-            "outputs": ["Raw.image_rgb"],
-            "declared": {
-                "image": "Raw.image_rgb",
-                "params": ["Raw.h", "Raw.w", "Raw.c_rgb"]
-            }
-        }
+        upstream = prev_stages[0] if prev_stages else stage
+        input_image = f"{upstream}.applier"
 
-    def build_applier(self, prev_out: str):
-        """
-        Base provides output value_info and c_rgb param.
-        Subclasses must provide:
-          - Raw.demosaic_kernel initializer
-          - Conv node wiring from prev_out -> Raw.image_rgb
-        """
-        # Channel count after demosaic: 3
-        c_rgb = helper.make_tensor(
-            name="Raw.c_rgb",
-            data_type=TensorProto.INT64,
-            dims=[1],
-            vals=[3]
+        # For simplicity, use a Conv node with fixed kernels to simulate bilinear demosaic.
+        # Each of the 4 Bayer planes is convolved into 3 RGB channels.
+        # In practice, you’d load precomputed kernels into initializers.
+
+        conv_out = out_name
+        node = oh.make_node(
+            "Conv",
+            inputs=[input_image, f"{stage}.kernels"],
+            outputs=[conv_out],
+            name=f"{stage}_demosaic"
         )
 
-        # Value info: output image HxWx3
-        value_info = [
-            helper.make_tensor_value_info("Raw.image_rgb", self.dtype, ["H", "W", 3]),
-            helper.make_tensor_value_info("Raw.c_rgb", TensorProto.INT64, [1]),
-            # Subclasses will add kernel value_info if desired
+        # Value infos
+        vis = [
+            oh.make_tensor_value_info(input_image, oh.TensorProto.FLOAT, ["n","4","h","width"]),
+            oh.make_tensor_value_info(f"{stage}.kernels", oh.TensorProto.FLOAT, [3,4,3,3]),  # example kernel shape
+            oh.make_tensor_value_info(conv_out, oh.TensorProto.FLOAT, ["n","3","h","width"]),
         ]
 
-        # Base does not create the Conv node or kernel; subclass must.
-        return {
-            "image": {"name": "Raw.image_rgb"},
-            "params": [
-                {"name": "Raw.h"},
-                {"name": "Raw.w"},
-                {"name": "Raw.c_rgb"}
-            ]
-        }, "Raw.image_rgb", [], [c_rgb], value_info
+        outputs = {"applier": {"name": conv_out}}
+        inits = []  # kernels would be added here as initializers
 
-    def build_coordinator(self, prev_out: str):
-        return None
+        return outputs, [node], inits, vis

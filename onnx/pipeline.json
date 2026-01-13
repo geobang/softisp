@@ -2,7 +2,7 @@
   "canonical_name": "softisp_pipeline_test",
   "stages": {
     "desc1": { "class": "image_desc_base", "version": "v0", "inputs": [] },
-    "crop1": { "class": "stride_remove_crop", "version": "v0", "inputs": ["desc1"] },
-    "bl1":   { "class": "blacklevel", "version": "v0", "inputs": ["crop1"] }
+    "stride_remove": { "class": "stride_remove_crop", "version": "v0", "inputs": ["desc1"] },
+    "bl1":   { "class": "blacklevel", "version": "v2", "inputs": ["stride_remove"] }
   }
 }
