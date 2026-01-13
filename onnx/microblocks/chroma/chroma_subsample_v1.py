@@ -1,5 +1,4 @@
-from registry import register_block
-from microblocks.base import MicroBlock
+from microblocks.base import MicroblockBase
 from onnx import helper
 
 

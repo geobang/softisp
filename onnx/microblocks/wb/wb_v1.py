@@ -1,45 +1,38 @@
-from registry import register_block
-from microblocks.base import MicroBlock
-from onnx import helper
+from microblocks.base import MicroblockBase
 
-
-@register_block
-class WBBlockV1(MicroBlock):
+class WBBlockV1(MicroBlockBase):
     def input_names(self):
         return ["input"]
 
     def output_names(self):
         return ["output"]
 
-    def build_algo_node(self, prev_out=None):
-        from onnx import helper
-        node = helper.make_node(
+    def build_algo(self, prev_out=None):
+        inp = prev_out or "input"
+        return helper.make_node(
             "Identity",
-            inputs=[prev_out or "input"],
+            inputs=[inp],
             outputs=["output"],
-            name="AlgoStub"
+            name="WBBlockV1Algo"
         )
-        return node
 
-    def build_applier_node(self, prev_out=None):
-        from onnx import helper
-        node = helper.make_node(
-            "Identity",
-            inputs=[prev_out or "input"],
+    def build_applier(self, prev_out=None):
+        inp = prev_out or "input"
+        return helper.make_node(
+            "Mul",
+            inputs=[inp, "wb_gains"],
             outputs=["output"],
-            name="ApplierStub"
+            name="WBBlockV1Applier"
         )
-        return node
 
-    def build_coordinator_node(self, prev_out=None):
-        from onnx import helper
-        node = helper.make_node(
+    def build_coordinator(self, prev_out=None):
+        inp = prev_out or "input"
+        return helper.make_node(
             "Identity",
-            inputs=[prev_out or "input"],
+            inputs=[inp],
             outputs=["output"],
-            name="CoordinatorStub"
+            name="WBBlockV1Coord"
         )
-        return node
 
     name = "wbblock"
     version = "v1"

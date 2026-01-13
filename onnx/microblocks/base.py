@@ -1,145 +1,61 @@
-from typing import List, Dict, Any, Sequence, Optional
+# base.py
+from typing import Dict, List, Any, Tuple
+from onnx import helper, TensorProto
 
-class MicroBlock:
+class MicroblockBase:
     """
-    Canonical SoftISP microblock base.
-
-    Responsibilities:
-    - Identity: stage, block, version
-    - Contracts: explicit input/output names
-    - Build dispatcher: algo/applier/coordinator (mode-aware)
-    - Coeffs/state/context handling
-    - Optional hooks: validate(), prepare()
-    - Utilities: canonical name helpers and ONNX-friendly semantics
-
-    Subclasses must implement:
-    - input_names()
-    - output_names()
-    - build_algo_node()
-    - build_applier_node()
-    - build_coordinator_node()
+    Canonical microblock interface for SoftISP.
+    Each block must expose:
+      - name, version, coeff_names (input coeffs), output_coeff_names (produced coeffs)
+      - input_names(), output_names()
+      - build_algo(), build_applier(), build_coordinator()
     """
 
-    # -------- Identity & setup --------
-    def __init__(self, stage: int, block: str, version: str, **kwargs: Any):
-        # Canonical identity
-        self.stage: int = stage
-        self.block: str = block
-        self.version: str = version
+    # --- Metadata ---
+    name: str = "unnamed"
+    version: str = "v0"
+    coeff_names: List[str] = []        # required input coeffs
+    output_coeff_names: List[str] = [] # coeffs produced by this block
 
-        # Context payloads
-        self.coeffs: Dict[str, Any] = kwargs.get("coeffs", {})
-        self.state: Dict[str, Any] = kwargs.get("state", {})
-        self.context: Dict[str, Any] = kwargs.get("context", {})
-        self.runtime: Dict[str, Any] = kwargs.get("runtime", {})
+    process_method: str = "Identity"
+    depends_on: List[str] = []
 
-        # IO hints (optional; subclasses should override input/output methods)
-        self._inputs: List[str] = kwargs.get("inputs", [])
-        self._outputs: List[str] = kwargs.get("outputs", [])
-
-        # Mode default if caller doesn’t pass one
-        self.mode: str = kwargs.get("mode", "algo")
-
-        # Optional namespacing/canonicalization preferences
-        self.ns: str = kwargs.get("ns", self.block)  # namespace for names
-        self.sep: str = kwargs.get("sep", "_")        # separator for names
-
-    # -------- Public entry points --------
-    def build(self, mode: Optional[str] = None) -> Sequence[Any]:
-        """
-        Mode-aware dispatcher returning ONNX nodes (or node lists).
-        """
-        mode = (mode or self.mode or "algo").lower()
-        if mode == "algo":
-            return self.build_algo_node()
-        elif mode == "applier":
-            return self.build_applier_node()
-        elif mode == "coordinator":
-            return self.build_coordinator_node()
-        raise ValueError(f"Unknown build mode: {mode}")
-
+    # --- IO helpers ---
     def input_names(self) -> List[str]:
-        """
-        Subclasses must return canonical input tensor names used in graph wiring.
-        If not overridden, fall back to optional _inputs provided via kwargs.
-        """
-        if self._inputs:
-            return list(self._inputs)
-        raise NotImplementedError(f"{self._id()} missing input_names()")
+        return ["input"]
 
     def output_names(self) -> List[str]:
-        """
-        Subclasses must return canonical output tensor names used in graph wiring.
-        If not overridden, fall back to optional _outputs provided via kwargs.
-        """
-        if self._outputs:
-            return list(self._outputs)
-        raise NotImplementedError(f"{self._id()} missing output_names()")
+        return ["output"]
 
-    # -------- Abstract build stubs --------
-    def build_algo_node(self) -> Sequence[Any]:
-        raise NotImplementedError(f"{self._id()} missing build_algo_node()")
+    # --- Build methods ---
+    def build_algo(self, prev_out: str):
+        raise NotImplementedError
 
-    def build_applier_node(self) -> Sequence[Any]:
-        raise NotImplementedError(f"{self._id()} missing build_applier_node()")
+    def build_applier(self, prev_out: str):
+        raise NotImplementedError
 
-    def build_coordinator_node(self) -> Sequence[Any]:
-        raise NotImplementedError(f"{self._id()} missing build_coordinator_node()")
-
-    # -------- Optional lifecycle hooks --------
-    def validate(self) -> bool:
-        """
-        Override to validate coeffs, IO names, shapes, and state.
-        Return True on success; raise on failure for explicit break.
-        """
-        # Minimal default checks: non-empty IO names by subclasses
-        # (Harness typically calls input_names()/output_names() before build)
-        return True
-
-    def prepare(self) -> None:
-        """
-        Override for pre-build normalization (e.g., coeff packing, name binding).
-        """
+    def build_coordinator(self, prev_out: str):
         return None
 
-    # -------- Utilities (name canonicalization) --------
-    def canon(self, *parts: str) -> str:
-        """
-        Canonical name builder with namespace and separator.
-        Example: canon('gain', 'r') -> 'wbblock_gain_r' (if ns='wbblock').
-        """
-        parts = [p for p in parts if p]
-        base = self.sep.join(parts)
-        if self.ns:
-            return self.ns + self.sep + base if base else self.ns
-        return base
+    # --- Contract validation ---
+    def validate_contract(self, outputs: Dict[str, Any], value_info: List[Any]) -> None:
+        if "image" not in outputs or "name" not in outputs["image"]:
+            raise ValueError(f"{self.name}: missing image output declaration")
 
-    def io(self, role: str, name: str) -> str:
-        """
-        IO-specific canonicalization helper.
-        Example: io('in', 'input') -> 'wbblock_in_input'
-        """
-        return self.canon(role, name)
+        names = [outputs["image"]["name"]]
+        if "coeffs" in outputs:
+            for item in outputs["coeffs"]:
+                names.append(item["name"])
+        if "params" in outputs:
+            for item in outputs["params"]:
+                names.append(item["name"])
 
-    def node_name(self, local: str) -> str:
-        """
-        Canonical node name helper.
-        Example: node_name('ApplyWB') -> 'wbblock_ApplyWB'
-        """
-        return self.canon(local)
+        if len(set(names)) != len(names):
+            raise ValueError(f"{self.name}: duplicate names detected")
 
-    # -------- Coeff helpers --------
-    def get_coeff(self, key: str, default: Any = None) -> Any:
-        return self.coeffs.get(key, default)
+        vinfo_names = set([vi.name if hasattr(vi, "name") else vi["name"] for vi in value_info])
+        for n in names:
+            if n not in vinfo_names:
+                raise ValueError(f"{self.name}: value_info missing for '{n}'")
 
-    def require_coeff(self, key: str) -> Any:
-        if key not in self.coeffs:
-            raise KeyError(f"{self._id()} missing coeff: {key}")
-        return self.coeffs[key]
 
-    # -------- ID & repr --------
-    def _id(self) -> str:
-        return f"{self.__class__.__name__}[{self.block}:{self.version}@{self.stage}]"
-
-    def __repr__(self) -> str:
-        return f"<{self._id()} inputs={self._inputs or '?'} outputs={self._outputs or '?'}>"
