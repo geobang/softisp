@@ -19,7 +19,7 @@ class ImageDescBase(MicroblockBase):
         width_in = f"{stage}.width_in"
 
         # Node-backed outputs
-        image_out = f"{stage}.image"
+        image_out = f"{stage}.applier"
         width_out = f"{stage}.width"
 
         # Identity nodes to anchor inputs

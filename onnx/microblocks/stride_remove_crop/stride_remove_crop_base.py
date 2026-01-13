@@ -17,7 +17,7 @@ class StrideRemoveCropBase(MicroblockBase):
 
         # Upstream alias (ImageDescBase stage)
         upstream = prev_stages[0] if prev_stages else stage
-        input_image = f"{upstream}.image"
+        input_image = f"{upstream}.applier"
 
         # Slice node:
         # - Input: [1, C, H, stride]

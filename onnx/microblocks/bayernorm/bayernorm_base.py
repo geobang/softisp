@@ -15,9 +15,9 @@ class BayerNormBase(MicroblockBase):
     needs = ["norm_scale"]
 
     def build_applier(self, stage: str, prev_stages=None):
-        out_name = f"{stage}.image"
+        out_name = f"{stage}.applier"
         upstream = prev_stages[0] if prev_stages else stage
-        input_image = f"{upstream}.image"   # <-- consume desc.image
+        input_image = f"{upstream}.applier"   # <-- consume desc.image
 
         # Slice: take only the first image (index 0 along n)
         slice_out = f"{stage}.sliced"
