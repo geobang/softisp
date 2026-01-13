@@ -1,121 +1,110 @@
-# onnx/build_all.py
-import sys
-import os
-import json
-from registry import import_all_microblocks, dump_registry
+import os, sys, json, logging, onnx
+import onnx.helper as oh
+from microblocks.registry import REGISTRY, import_all_microblocks, dump_registry
 
-DEFAULT_MANIFEST = "pipeline.json"
-DEFAULT_MODE = "applier"
-OUTPUT_ROOT = "onnx_out"
+logging.basicConfig(level=logging.DEBUG, format="%(levelname)s:%(message)s")
 
-def instantiate_block(block_name, version):
-    """Instantiate a block from the registry by name and version."""
-    reg = dump_registry()
-    key = (block_name, version)
-    if key not in reg:
-        raise KeyError(f"Block not found in registry: {key}")
-    return reg[key]()
+def load_manifest(path: str):
+    with open(path, "r") as f:
+        return json.load(f)
 
-def normalize_outputs(outputs):
-    """Force all coeff keys and tensor names to lowercase for consistency."""
-    normalized = {}
-    for key, val in outputs.items():
-        lower_key = key.lower()
-        if isinstance(val, dict) and "name" in val:
-            normalized[lower_key] = {"name": val["name"].lower()}
-        elif isinstance(val, str):
-            normalized[lower_key] = {"name": val.lower()}
-        elif isinstance(val, list):
-            # normalize each element in the list
-            normalized[lower_key] = [v.lower() if isinstance(v, str) else v for v in val]
-        else:
-            # fallback: keep as-is
-            normalized[lower_key] = val
-    return normalized
+def save_model(nodes, inits, vis, graph_inputs, final_out, out_path, canonical_name):
+    """
+    Build and save the ONNX model.
+    - nodes: list[onnx.NodeProto]
+    - inits: list[onnx.TensorProto]
+    - vis: list[onnx.ValueInfoProto] (non-input metadata)
+    - graph_inputs: list[onnx.ValueInfoProto] (actual graph inputs)
+    - final_out: str (tensor name for graph output)
+    """
+    outputs = [oh.make_tensor_value_info(final_out, onnx.TensorProto.FLOAT, ["N","C","H","W"])]
 
-def ensure_output_folder(manifest, mode):
-    """Create output folder based on canonical_name or mode."""
-    folder_name = manifest.get("canonical_name", mode)
-    out_dir = os.path.join(OUTPUT_ROOT, folder_name)
-    os.makedirs(out_dir, exist_ok=True)
-    print(f"[DEBUG] Output folder created: {out_dir}")
-    return out_dir
+    # Use keyword args to avoid positional order mistakes
+    graph = oh.make_graph(
+        nodes=nodes,
+        name=canonical_name,
+        inputs=graph_inputs,
+        outputs=outputs,
+        initializer=inits,
+        value_info=vis
+    )
 
-def build_graph(manifest, mode):
-    """Build a graph for the given manifest and mode (algo/applier/coordinator)."""
-    prev_out = "input_image"
-    all_nodes, all_inits, all_vis = [], [], []
+    model = oh.make_model(
+        graph,
+        producer_name="softisp_rewrite",
+        opset_imports=[onnx.helper.make_operatorsetid("", 13)]
+    )
+    onnx.checker.check_model(model)
 
-    for idx, stage in enumerate(manifest["stages"]):
-        block_name = stage["block"]
-        version = stage["version"]
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    onnx.save(model, out_path)
+    logging.info(f"Saved ONNX model to {out_path}")
 
-        # Instantiate block
-        block = instantiate_block(block_name, version)
+def build_all(manifest_file: str, mode: str = "applier"):
+    manifest = load_manifest(manifest_file)
+    stages_spec = manifest["stages"]
 
-        # Log which block is being processed
-        print(f"[DEBUG] Stage {idx} → block={block_name}, version={version}, mode={mode}")
-        print(f"[DEBUG] Processing {block.__class__.__name__}…")
+    nodes, inits, vis = [], [], []
+    graph_inputs = []  # actual graph inputs (ValueInfoProto)
+    produced = set()
+    declared_inputs = set()  # names declared by stages to be fed from outside
+    final_out = None
 
-        # Call the appropriate builder
-        if mode == "algo":
-            outputs, consumed, nodes, inits, vis = block.build_algo(prev_out)
-        elif mode == "applier":
-            outputs, consumed, nodes, inits, vis = block.build_applier(prev_out)
-        elif mode == "coordinator":
-            outputs, consumed, nodes, inits, vis = block.build_coordinator(prev_out)
-        else:
-            raise ValueError(f"Unknown mode {mode}")
+    # Seed the canonical input_image as a graph input (common convention)
+    input_image_vi = oh.make_tensor_value_info("input_image", onnx.TensorProto.FLOAT, ["N","C","H","W"])
+    graph_inputs.append(input_image_vi)
 
-        # Normalize coeff names
-        outputs = normalize_outputs(outputs)
+    for stage_name, spec in stages_spec.items():
+        cls_key = (spec["class"], spec["version"])
+        if cls_key not in REGISTRY:
+            raise KeyError(f"Registry missing class {cls_key}")
+        mb_cls = REGISTRY[cls_key]
+        mb = mb_cls()
 
-        # Collect results
-        all_nodes.extend(nodes)
-        all_inits.extend(inits)
-        all_vis.extend(vis)
+        logging.info(f"Building stage {stage_name}: {spec['class']} v{spec['version']}")
+        logging.debug(f"Declared inputs: {spec.get('inputs', [])}")
 
-        # Update prev_out for next stage
-        if "image" in outputs:
-            prev_out = outputs["image"]["name"]
+        # Build stage
+        outputs, stage_nodes, stage_inits, stage_vis = mb.build_applier(
+            stage_name, prev_stages=spec.get("inputs", [])
+        )
 
-        # Log completion
-        print(f"[DEBUG] Finished {block.__class__.__name__} at stage {idx}")
+        nodes.extend(stage_nodes)
+        inits.extend(stage_inits)
+        vis.extend(stage_vis)
 
-    return all_nodes, all_inits, all_vis, prev_out
+        # Track produced tensors and candidate final output
+        for out in outputs.values():
+            produced.add(out["name"])
+            logging.debug(f"Produced tensor: {out['name']}")
+            if out["name"].endswith(".applier") or out["name"].endswith(".image"):
+                final_out = out["name"]
 
-def build_all(manifest_file=None, mode=None):
-    """Import all microblocks, load manifest, and build the graph."""
-    # Defaults
-    manifest_file = manifest_file or DEFAULT_MANIFEST
-    mode = mode or DEFAULT_MODE
+        # Discover stage-scoped needs to seed as graph inputs, if present in ValueInfo
+        # Convention: any ValueInfo named f"{stage}.{need_suffix}" that isn’t produced becomes a graph input.
+        for v in stage_vis:
+            name = v.name
+            # Treat value_infos that look like needs (stage-scoped) and aren’t produced as inputs
+            if name.startswith(f"{stage_name}.") and name not in produced:
+                declared_inputs.add(name)
 
-    print("[DEBUG] Importing microblocks to populate registry …")
-    import_all_microblocks()
-    reg = dump_registry()
-    print(f"[DEBUG] Registry has {len(reg)} entries")
-    for (name, version), cls in sorted(reg.items()):
-        print(f"[DEBUG]   ({name}, {version}) -> {cls.__name__}")
+    # Promote declared stage-scoped needs to graph inputs
+    # Avoid duplicates with already added "input_image"
+    existing_input_names = {vi.name for vi in graph_inputs}
+    for v in vis:
+        if v.name in declared_inputs and v.name not in existing_input_names:
+            graph_inputs.append(v)
+            existing_input_names.add(v.name)
+            logging.debug(f"Added graph input: {v.name}")
 
-    # Load manifest
-    with open(manifest_file) as f:
-        manifest = json.load(f)
-    print(f"[DEBUG] Manifest loaded with {len(manifest['stages'])} stages")
+    if not final_out:
+        raise RuntimeError("No final output tensor produced")
 
-    # Create output folder
-    out_dir = ensure_output_folder(manifest, mode)
-
-    # Build graph
-    nodes, inits, vis, final_out = build_graph(manifest, mode)
-
-    # Example: write ONNX graph to file (stub)
-    out_path = os.path.join(out_dir, f"{mode}.onnx")
-    print(f"[DEBUG] Would save graph to {out_path}")
-    # TODO: implement save_model(nodes, inits, vis, out_path)
-
-    return nodes, inits, vis, final_out
+    out_path = os.path.join("onnx_out", manifest["canonical_name"], f"{mode}.onnx")
+    save_model(nodes, inits, vis, graph_inputs, final_out, out_path, manifest["canonical_name"])
 
 if __name__ == "__main__":
-    manifest_file = sys.argv[1] if len(sys.argv) > 1 else None
-    mode = sys.argv[2] if len(sys.argv) > 2 else None
-    build_all(manifest_file, mode)
+    import_all_microblocks()
+    logging.info(f"Registry contents: {dump_registry()}")
+    manifest_file = sys.argv[1] if len(sys.argv) > 1 else "pipeline.json"
+    build_all(manifest_file, mode="applier")

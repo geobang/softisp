@@ -1,33 +1,33 @@
 import onnx.helper as oh
 from microblocks.base import MicroblockBase
 
-class BlackLevelBase(MicroblockBase):
-    name = "blacklevel"
+class StrideRemoveCropBase(MicroblockBase):
+    name = "stride_remove_crop"
     version = "v0"
-    deps = ["stride_remove_crop"]
-    # Declare needs as suffixes; coordinator will namespace them to f"{stage}.offset"
-    needs = ["offset"]
+    deps = ["image_desc_base"]
+    needs = [f"{name}.crop_starts", f"{name}.crop_ends"]
 
     def build_applier(self, stage: str, prev_stages=None):
         out_name = f"{stage}.applier"
-        offset_name = f"{stage}.offset"
+        starts = f"{stage}.crop_starts"
+        ends   = f"{stage}.crop_ends"
 
         upstream = prev_stages[0] if prev_stages else stage
-        input_image = f"{upstream}.applier"
+        input_image = f"{upstream}.image"
 
         node = oh.make_node(
-            "Sub",
-            inputs=[input_image, offset_name],
+            "Slice",
+            inputs=[input_image, starts, ends],
             outputs=[out_name],
-            name=f"{stage}_sub"
+            name=f"{stage}_slice"
         )
 
         vis = [
             oh.make_tensor_value_info(input_image, oh.TensorProto.FLOAT, ["N","C","H","W"]),
-            oh.make_tensor_value_info(offset_name, oh.TensorProto.FLOAT, [1]),
+            oh.make_tensor_value_info(starts, oh.TensorProto.INT64, [4]),
+            oh.make_tensor_value_info(ends, oh.TensorProto.INT64, [4]),
             oh.make_tensor_value_info(out_name, oh.TensorProto.FLOAT, ["N","C","H","W"]),
         ]
 
-        # Only advertise the produced image; offset is a need, not an output
         outputs = {"image": {"name": out_name}}
         return outputs, [node], [], vis

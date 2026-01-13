@@ -1,61 +1,45 @@
-# base.py
-from typing import Dict, List, Any, Tuple
-from onnx import helper, TensorProto
+# microblocks/base.py
+import onnx.helper as oh
 
 class MicroblockBase:
     """
-    Canonical microblock interface for SoftISP.
-    Each block must expose:
-      - name, version, coeff_names (input coeffs), output_coeff_names (produced coeffs)
-      - input_names(), output_names()
-      - build_algo(), build_applier(), build_coordinator()
+    Abstract base class for all microblocks.
+    Provides a uniform interface and default attributes.
+    Concrete subclasses must override `name`, `version`, and implement build_applier().
     """
 
-    # --- Metadata ---
-    name: str = "unnamed"
-    version: str = "v0"
-    coeff_names: List[str] = []        # required input coeffs
-    output_coeff_names: List[str] = [] # coeffs produced by this block
+    # Default attributes (will be overridden in subclasses)
+    name = "unnamed"
+    version = "v0"
+    deps = []   # list of allowed upstream class names
+    needs = []  # list of required tensors (stage-scoped)
 
-    process_method: str = "Identity"
-    depends_on: List[str] = []
+    def __init__(self):
+        # You can add common initialization here if needed
+        pass
 
-    # --- IO helpers ---
-    def input_names(self) -> List[str]:
-        return ["input"]
+    def build_applier(self, stage: str, prev_stages=None):
+        """
+        Build the ONNX nodes for this microblock.
+        Must be implemented by subclasses.
+        Should return: (outputs, nodes, inits, vis)
+        - outputs: dict of logical outputs → {"name": tensor_name}
+        - nodes: list of onnx.NodeProto
+        - inits: list of onnx.TensorProto
+        - vis: list of onnx.ValueInfoProto
+        """
+        raise NotImplementedError(f"{self.__class__.__name__} must implement build_applier()")
 
-    def output_names(self) -> List[str]:
-        return ["output"]
-
-    # --- Build methods ---
-    def build_algo(self, prev_out: str):
-        raise NotImplementedError
-
-    def build_applier(self, prev_out: str):
-        raise NotImplementedError
-
-    def build_coordinator(self, prev_out: str):
-        return None
-
-    # --- Contract validation ---
-    def validate_contract(self, outputs: Dict[str, Any], value_info: List[Any]) -> None:
-        if "image" not in outputs or "name" not in outputs["image"]:
-            raise ValueError(f"{self.name}: missing image output declaration")
-
-        names = [outputs["image"]["name"]]
-        if "coeffs" in outputs:
-            for item in outputs["coeffs"]:
-                names.append(item["name"])
-        if "params" in outputs:
-            for item in outputs["params"]:
-                names.append(item["name"])
-
-        if len(set(names)) != len(names):
-            raise ValueError(f"{self.name}: duplicate names detected")
-
-        vinfo_names = set([vi.name if hasattr(vi, "name") else vi["name"] for vi in value_info])
-        for n in names:
-            if n not in vinfo_names:
-                raise ValueError(f"{self.name}: value_info missing for '{n}'")
-
-
+    @classmethod
+    def contract(cls):
+        """
+        Return a summary of the block’s declared contract:
+        - name, version, deps, needs
+        Useful for coordinator validation.
+        """
+        return {
+            "name": cls.name,
+            "version": cls.version,
+            "deps": cls.deps,
+            "needs": cls.needs,
+        }

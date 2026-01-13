@@ -1,23 +1,8 @@
 {
   "canonical_name": "softisp_pipeline_test",
-  "stages": [
-    {
-      "stage": 0,
-      "block": "image_desc_base",
-      "version": "v0",
-      "inputs": []
-    },
-    {
-      "stage": 1,
-      "block": "stride_remove_crop",
-      "version": "v0",
-      "inputs": ["image_desc_base"]
-    },
-    {
-      "stage": 2,
-      "block": "blacklevel",
-      "version": "v2",
-      "inputs": ["stride_remove_crop"]
-    }
-  ]
+  "stages": {
+    "desc1": { "class": "image_desc_base", "version": "v0", "inputs": [] },
+    "crop1": { "class": "stride_remove_crop", "version": "v0", "inputs": ["desc1"] },
+    "bl1":   { "class": "blacklevel", "version": "v0", "inputs": ["crop1"] }
+  }
 }

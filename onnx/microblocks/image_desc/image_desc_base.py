@@ -1,52 +1,36 @@
-# image_desc_base.py
-from onnx import helper, TensorProto
-#from microblocks.base import MicroblockBase
+import onnx.helper as oh
 from microblocks.base import MicroblockBase
+import onnx.helper as oh
 
 class ImageDescBase(MicroblockBase):
-    """
-    Base image descriptor.
-    Declares [h, w, c, stride] as ONNX tensors for downstream blocks.
-    """
-
     name = "image_desc_base"
     version = "v0"
-    coeff_names = ["image", "h", "w", "c", "stride"]
-    output_coeff_names = ["image", "h", "w", "c", "stride"]
+    deps = []
+    needs = []
 
-    def __init__(self, dtype: int = TensorProto.FLOAT):
-        super().__init__()
-        self.dtype = dtype
-
-    def build_algo(self, prev_out: str):
-        return {
-            "op_type": "Identity",
-            "inputs": [prev_out],
-            "outputs": ["Raw.image"],
-            "declared": {
-                "image": "Raw.image",
-                "params": ["Raw.h", "Raw.w", "Raw.c", "Raw.stride"]
-            }
+    def build_applier(self, stage: str, prev_stages=None):
+        outputs = {
+            "image": {"name": f"{stage}.image"},
+            "h": {"name": f"{stage}.h"},
+            "w": {"name": f"{stage}.w"},
+            "c": {"name": f"{stage}.c"},
+            "stride": {"name": f"{stage}.stride"},
         }
 
-    def build_applier(self, prev_out: str):
-        # Value info for descriptors
-        value_info = [
-            helper.make_tensor_value_info("Raw.image", self.dtype, ["H", "Stride", "C"]),
-            helper.make_tensor_value_info("Raw.h", TensorProto.INT64, []),
-            helper.make_tensor_value_info("Raw.w", TensorProto.INT64, []),
-            helper.make_tensor_value_info("Raw.c", TensorProto.INT64, []),
-            helper.make_tensor_value_info("Raw.stride", TensorProto.INT64, []),
-        ]
-        return {
-            "image": {"name": "Raw.image"},
-            "params": [
-                {"name": "Raw.h"},
-                {"name": "Raw.w"},
-                {"name": "Raw.c"},
-                {"name": "Raw.stride"}
-            ]
-        }, "Raw.image", [], [], value_info
+        node = oh.make_node(
+            "Identity",
+            inputs=["input_image"],
+            outputs=[f"{stage}.image"],
+            name=f"{stage}_identity"
+        )
 
-    def build_coordinator(self, prev_out: str):
-        return None
+        vis = [
+            oh.make_tensor_value_info("input_image", oh.TensorProto.FLOAT, ["N","C","H","W"]),
+            oh.make_tensor_value_info(f"{stage}.image", oh.TensorProto.FLOAT, ["N","C","H","W"]),
+            oh.make_tensor_value_info(f"{stage}.h", oh.TensorProto.INT64, [1]),
+            oh.make_tensor_value_info(f"{stage}.w", oh.TensorProto.INT64, [1]),
+            oh.make_tensor_value_info(f"{stage}.c", oh.TensorProto.INT64, [1]),
+            oh.make_tensor_value_info(f"{stage}.stride", oh.TensorProto.INT64, [1]),
+        ]
+
+        return outputs, [node], [], vis
