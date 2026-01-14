@@ -36,3 +36,42 @@ class ToneMapBase(MicroblockBase):
 
         outputs = {"applier": {"name": out_name}}
         return outputs, [node], [], vis
+
+    def build_algo(self, stage: str, prev_stages=None):
+        """Declare or initialize tonemap_curve for this stage."""
+        nodes, inits, vis = [], [], []
+
+        curve = f"{stage}.tonemap_curve"
+
+        # Value info: scalar or vector depending on curve design
+        vis.append(oh.make_tensor_value_info(curve, oh.TensorProto.FLOAT, [1]))
+
+        # Optionally initialize with a default curve parameter
+        # Example: simple gain factor of 0.8
+        default_curve = [0.8]
+        inits.append(
+            oh.make_tensor(curve, oh.TensorProto.FLOAT, [1], default_curve)
+        )
+
+        upstream = prev_stages[0] if prev_stages else stage
+        input_image = f"{upstream}.applier"
+        out_name    = f"{stage}.applier"
+
+        # Identity node to forward input → output
+        nodes.append(oh.make_node(
+            "Identity",
+            inputs=[input_image],
+            outputs=[out_name],
+            name=f"{stage}.identity"
+        ))
+
+        vis = [
+            oh.make_tensor_value_info(input_image, oh.TensorProto.FLOAT, ["n","3","target_h","target_w"]),
+            oh.make_tensor_value_info(out_name,   oh.TensorProto.FLOAT, ["n","3","target_h","target_w"]),
+        ]
+
+        outputs = {
+            "applier": {"name": out_name},
+            "tonemap_curve": {"name": curve},
+        }
+        return outputs, nodes, inits, vis
