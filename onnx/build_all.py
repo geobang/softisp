@@ -32,7 +32,8 @@ def save_model(nodes, inits, vis, graph_inputs, final_out, out_path, canonical_n
     model = oh.make_model(
         graph,
         producer_name="softisp_rewrite",
-        opset_imports=[onnx.helper.make_operatorsetid("", 13)]
+        opset_imports=[onnx.helper.make_operatorsetid("", 13)],
+        ir_version=11,
     )
     onnx.checker.check_model(model)
 

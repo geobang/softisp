@@ -28,9 +28,9 @@ class WBAvgV1(AWBBase):
     # Sub‑methods
     # -------------------------------------------------------------------------
 
-    def _build_channel_means(self, stage, nodes, inits, vis):
-        """Compute mean R,G,B from RGGB image."""
-        in_image = f"{stage}.applier"
+    def _build_channel_means(self, stage, prev_stage, nodes, inits, vis):
+        """Compute mean R,G,B from upstream stage image."""
+        in_image = f"{prev_stage}.applier"
         mean_name = f"{stage}.mean_channels"
 
         nodes.append(oh.make_node(
@@ -128,13 +128,14 @@ class WBAvgV1(AWBBase):
 
     def build_algo(self, stage: str, prev_stages=None):
         nodes, inits, vis = [], [], []
+        upstream = prev_stages[0] if prev_stages else stage
 
         # Value info for outputs
         vis.append(oh.make_tensor_value_info(f"{stage}.wb_gains", TensorProto.FLOAT, [3]))
         vis.append(oh.make_tensor_value_info(f"{stage}.cct", TensorProto.FLOAT, [1]))
 
         # Sub‑methods
-        r_mean, g_mean_avg, b_mean = self._build_channel_means(stage, nodes, inits, vis)
+        r_mean, g_mean, b_mean = self._build_channel_means(stage, upstream, nodes, inits, vis)
         out_wb = self._build_wb_gains(stage, nodes, r_mean, g_mean_avg, b_mean)
         out_cct = self._build_cct(stage, nodes, inits, r_mean, g_mean_avg, b_mean)
 
