@@ -37,3 +37,45 @@ class GammaBase(MicroblockBase):
 
         outputs = {"applier": {"name": out_name}}
         return outputs, [node], [], vis
+
+    def build_algo(self, stage: str, prev_stages=None):
+        """Declare gamma_value as an output of this stage."""
+        nodes, inits, vis = [], [], []
+
+        gamma = f"{stage}.gamma_value"
+
+        # Value info for gamma_value
+        vis.append(oh.make_tensor_value_info(gamma, oh.TensorProto.FLOAT, [1]))
+
+        # You can either:
+        # (A) leave gamma_value as a coordinator-provided input,
+        # (B) or initialize it here with a default constant.
+        # Example for (B):
+        default_gamma = 2.2
+        inits.append(
+            oh.make_tensor(gamma, oh.TensorProto.FLOAT, [1], [default_gamma])
+        )
+
+        upstream = prev_stages[0] if prev_stages else stage
+        input_image = f"{upstream}.applier"
+        out_name    = f"{stage}.applier"
+
+        # Identity node to forward input → output
+        nodes.append(oh.make_node(
+            "Identity",
+            inputs=[input_image],
+            outputs=[out_name],
+            name=f"{stage}.identity"
+        ))
+
+        vis += [
+            oh.make_tensor_value_info(input_image, oh.TensorProto.FLOAT, ["n","3","target_h","target_w"]),
+            oh.make_tensor_value_info(out_name,   oh.TensorProto.FLOAT, ["n","3","target_h","target_w"]),
+        ]
+
+        # Explicitly add the applier item to outputs
+        outputs = {
+            "applier": {"name": out_name},
+            "gamma_value": {"name": gamma},
+        }
+        return outputs, nodes, inits, vis
