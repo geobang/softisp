@@ -2,10 +2,11 @@
 
 import onnx.helper as oh
 from onnx import TensorProto
-from .tone_base import ToneMapBase
+
+from .tone_filmic_v2 import ToneFilmicV2
 
 
-class ToneFilmicV3(ToneMapBase):
+class ToneFilmicV3(ToneFilmicV2):
     """
     ToneFilmicV3
     -------------
