@@ -33,20 +33,38 @@ class WBAvgV1(AWBBase):
         in_image = f"{prev_stage}.applier"
         mean_name = f"{stage}.mean_channels"
 
+        print("check " f"{stage}.mean_channels")
+
         nodes.append(oh.make_node(
-            "ReduceMean", [in_image], [mean_name],
-            name=f"{stage}.reduce_mean", axes=[2, 3], keepdims=0
+            "ReduceMean",
+            inputs=[in_image],
+            outputs=[mean_name],
+            name=f"{stage}.reduce_mean",
+            keepdims=0,
+            axes=[2, 3], # ✅ attribute, not input
         ))
-        vis.append(oh.make_tensor_value_info(mean_name, TensorProto.FLOAT, [4]))
+
+        #vis.append(oh.make_tensor_value_info(mean_name, TensorProto.FLOAT, [4]))
 
         # Split RGGB → R,G,B
         r_mean, g1_mean, g2_mean, b_mean = (
             f"{stage}.r_mean", f"{stage}.g1_mean", f"{stage}.g2_mean", f"{stage}.b_mean"
         )
+        split_const = f"{stage}.split_sizes"
+        inits.append(
+            oh.make_tensor(split_const, TensorProto.INT64, [4], [1, 1, 1, 1])
+        )
+
+        r_mean, g1_mean, g2_mean, b_mean = (
+            f"{stage}.r_mean", f"{stage}.g1_mean", f"{stage}.g2_mean", f"{stage}.b_mean"
+        )
+
         nodes.append(oh.make_node(
-            "Split", [mean_name],
-            [r_mean, g1_mean, g2_mean, b_mean],
-            name=f"{stage}.split_rggb", axis=0, split=[1,1,1,1]
+            "Split",
+            inputs=[mean_name, split_const],
+            outputs=[r_mean, g1_mean, g2_mean, b_mean],
+            name=f"{stage}.split_rggb",
+            axis=0
         ))
 
         # Average greens
@@ -81,9 +99,10 @@ class WBAvgV1(AWBBase):
         out_cct = f"{stage}.cct"
 
         # Sum channels
+        sum_rg = f"{stage}.sum_rg"
         sum_rgb = f"{stage}.sum_rgb"
-        nodes.append(oh.make_node("Add", [r_mean, g_mean_avg], [sum_rgb], name=f"{stage}.sum_rg"))
-        nodes.append(oh.make_node("Add", [sum_rgb, b_mean], [sum_rgb], name=f"{stage}.sum_rgb"))
+        nodes.append(oh.make_node("Add", [r_mean, g_mean_avg], [sum_rg], name=f"{stage}.sum_rg"))
+        nodes.append(oh.make_node("Add", [sum_rg, b_mean], [sum_rgb], name=f"{stage}.sum_rgb"))
 
         # Chromaticities
         r_chroma, b_chroma = f"{stage}.r_chroma", f"{stage}.b_chroma"
@@ -129,15 +148,29 @@ class WBAvgV1(AWBBase):
     def build_algo(self, stage: str, prev_stages=None):
         nodes, inits, vis = [], [], []
         upstream = prev_stages[0] if prev_stages else stage
+        applier = f"{stage}.applier"
 
         # Value info for outputs
         vis.append(oh.make_tensor_value_info(f"{stage}.wb_gains", TensorProto.FLOAT, [3]))
         vis.append(oh.make_tensor_value_info(f"{stage}.cct", TensorProto.FLOAT, [1]))
 
         # Sub‑methods
-        r_mean, g_mean, b_mean = self._build_channel_means(stage, upstream, nodes, inits, vis)
+        r_mean, g_mean_avg, b_mean = self._build_channel_means(stage, upstream, nodes, inits, vis)
         out_wb = self._build_wb_gains(stage, nodes, r_mean, g_mean_avg, b_mean)
         out_cct = self._build_cct(stage, nodes, inits, r_mean, g_mean_avg, b_mean)
 
-        outputs = {"wb_gains": {"name": out_wb}, "cct": {"name": out_cct}}
+        ccm      = f"{stage}.ccm"
+        input_image = f"{upstream}.applier"
+
+        nodes.append(oh.make_node("MatMul", inputs=[input_image, ccm], outputs=[applier], name=f"{stage}_ccm"))
+
+        vis.append(oh.make_tensor_value_info(input_image, oh.TensorProto.FLOAT, ["n","3","h","width"]))
+        vis.append(oh.make_tensor_value_info(ccm, oh.TensorProto.FLOAT, [3,3]))
+        vis.append(oh.make_tensor_value_info(applier, oh.TensorProto.FLOAT, ["n","3","h","width"]))
+
+        outputs = {
+            "applier": {"name": applier},
+            "wb_gains": {"name": out_wb},
+            "cct": {"name": out_cct},
+        }
         return outputs, nodes, inits, vis
