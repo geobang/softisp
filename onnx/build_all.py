@@ -120,5 +120,5 @@ if __name__ == "__main__":
     import_all_microblocks()
     logging.info(f"Registry contents: {dump_registry()}")
     manifest_file = sys.argv[1] if len(sys.argv) > 1 else "pipeline.json"
-    build_all(manifest_file, mode="applier")
     build_all(manifest_file, mode="algo")
+    build_all(manifest_file, mode="applier")
