@@ -7,6 +7,8 @@
 # -----------------------------------------------------------------------------
 
 # in wb_avg_v1.py
+import onnx.helper as oh
+from onnx import TensorProto
 from microblocks.wb.wb_base import AWBBase
 
 class WBAvgV1(AWBBase):
@@ -19,7 +21,7 @@ class WBAvgV1(AWBBase):
     name = "wb_avg_v1"
     version = "v1"
     deps = []
-    needs = ["image_in"]
+    needs = ["applier"]
     provides = ["wb_gains", "cct"]
 
     # -------------------------------------------------------------------------
@@ -28,7 +30,7 @@ class WBAvgV1(AWBBase):
 
     def _build_channel_means(self, stage, nodes, inits, vis):
         """Compute mean R,G,B from RGGB image."""
-        in_image = f"{stage}.image_in"
+        in_image = f"{stage}.applier"
         mean_name = f"{stage}.mean_channels"
 
         nodes.append(oh.make_node(

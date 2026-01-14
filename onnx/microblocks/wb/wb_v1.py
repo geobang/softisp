@@ -39,14 +39,15 @@ class WhiteBalanceV1(AWBBase):
         outputs = {"applier": {"name": wb_out}}
         return outputs, [mul_node], [], vis
 
-    def build_algo(self, stage: str):
+    def build_algo(self, stage: str, prev_stages=None):
         """
         Build ONNX subgraph to compute wb_gains [3].
         Uses ReduceMean over H,W and gray-world assumption.
         """
-
-        image_in = f"{stage}.image"
+        upstream = prev_stages[0] if prev_stages else stage
+        image_in = f"{upstream}.applier"
         reduce_out = f"{stage}.avg_channels"
+        applier = f"{stage}.applier"
 
         reduce_node = oh.make_node(
             "ReduceMean",
@@ -102,5 +103,16 @@ class WhiteBalanceV1(AWBBase):
             oh.make_tensor_value_info(wb_out, onnx.TensorProto.FLOAT, [3]),
         ]
 
-        outputs = {"wb_gains": {"name": wb_out}}
+        mul_node = oh.make_node(
+            "Mul",
+            [image_in, f"{stage}.wb_gains"],
+            [applier],
+            name=f"{stage}_apply_wb"
+        )
+        nodes += [mul_node]
+
+        outputs = {
+            "applier": {"name": applier},
+            "wb_gains": {"name": wb_out},
+        }
         return outputs, nodes, inits, vis

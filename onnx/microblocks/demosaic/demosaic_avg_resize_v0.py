@@ -5,17 +5,16 @@ from onnx import TensorProto
 from .demosaic_base import DemosaicBase
 
 
-class DemosaicAvgResizeV1(DemosaicBase):
+class DemosaicAvgResizeV0(DemosaicBase):
     """
     DemosaicAvgResizeV1
     -------------------
     - Needs: input_image [n,4,h,w] (R,G1,G2,B planes)
-    - Provides: applier [n,3,h/2,w/2], lux_scalar []
+    - Provides: applier [n,3,h,w], lux_scalar []
     - Behavior:
         * Average G1 and G2 -> Gavg
         * Concat R,Gavg,B -> RGB
-        * Resize to half resolution (h/2,w/2) using box filter if supported, else bilinear
-        * Compute lux from resized RGB
+        * Compute lux from RGB
     """
 
     name = "demosaic_avg_resize_v1"

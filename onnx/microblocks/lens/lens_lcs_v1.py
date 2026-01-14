@@ -1,5 +1,3 @@
-# onnx/microblocks/lens/lens_lcs_v1.py
-
 import onnx.helper as oh
 from onnx import TensorProto
 from .lens_lcs_base import LensLCSBase
@@ -9,20 +7,16 @@ class LensLCSV1(LensLCSBase):
     """
     LensLCSV1 (v1)
     --------------
-    Inherits LensLCSBase and extends it with resize support.
+    Adaptive lens shading correction block.
 
     Needs:
         - applier [n,3,h,w]       : image tensor from upstream
-        - lcs_coeffs [H,W]        : full-resolution correction coefficients
+        - lcs_coeffs [H,W]        : full-resolution correction coefficients (graph input)
         - resize_factor []        : scalar (e.g. 0.5 for half-res)
 
     Provides:
-        - applier [n,3,h*resize_factor,w*resize_factor] : corrected image tensor
-        - lcs_coeffs_resized [h*resize_factor,w*resize_factor] : resized coefficient map
-
-    Behavior:
-        - build_algo: resizes lcs_coeffs according to resize_factor
-        - build_applier: applies resized lcs_coeffs to applier (image)
+        - applier [n,3,h*,w*] : corrected image tensor
+        - lcs_coeffs_resized [h*,w*] : resized coefficient map
     """
 
     name = "lens_lcs_v1"
@@ -36,10 +30,15 @@ class LensLCSV1(LensLCSBase):
         """
         vis, nodes, inits = [], [], []
         upstream = prev_stages[0] if prev_stages else stage
-        lcs_coeffs = f"{upstream}.lcs_coeffs"
+        image_in = f"{upstream}.applier"
+
+        # lcs_coeffs is an independent graph input
+        lcs_coeffs = f"{stage}.lcs_coeffs"
+        vis.append(oh.make_tensor_value_info(lcs_coeffs, TensorProto.FLOAT, ["H", "W"]))
+
         resize_factor = f"{upstream}.resize_factor"
 
-        # scales = [1.0, 1.0, resize_factor, resize_factor]
+        # constants for batch and channel dimensions
         one_n = f"{stage}.one_n"
         one_c = f"{stage}.one_c"
         inits += [
@@ -47,6 +46,7 @@ class LensLCSV1(LensLCSBase):
             oh.make_tensor(one_c, TensorProto.FLOAT, [], [1.0]),
         ]
 
+        # scales = [1.0, 1.0, resize_factor, resize_factor]
         scales = f"{stage}.scales"
         nodes.append(
             oh.make_node(
@@ -62,19 +62,30 @@ class LensLCSV1(LensLCSBase):
         nodes.append(
             oh.make_node(
                 "Resize",
-                inputs=[lcs_coeffs, "", scales],
+                inputs=[lcs_coeffs, scales],  # omit roi
                 outputs=[lcs_resized],
                 name=f"{stage}.resize_lcs",
                 mode="linear",
             )
         )
 
-        vis.append(
-            oh.make_tensor_value_info(
-                lcs_resized, TensorProto.FLOAT, ["h*", "w*"]
+        vis.append(oh.make_tensor_value_info(lcs_resized, TensorProto.FLOAT, ["h*", "w*"]))
+
+        applier = f"{stage}.applier"
+        nodes.append(
+            oh.make_node(
+                "Mul",
+                inputs=[image_in, lcs_resized],
+                outputs=[applier],
+                name=f"{stage}.mul_apply",
             )
         )
-        outputs = {"lcs_coeffs_resized": {"name": lcs_resized}}
+        vis.append(oh.make_tensor_value_info(applier, TensorProto.FLOAT, ["n", 3, "h*", "w*"]))
+
+        outputs = {
+            "applier": {"name": applier},
+            "lcs_coeffs_resized": {"name": lcs_resized},
+        }
         return outputs, nodes, inits, vis
 
     def build_applier(self, stage: str, prev_stages=None):
@@ -95,8 +106,6 @@ class LensLCSV1(LensLCSBase):
                 name=f"{stage}.mul_apply",
             )
         )
-        vis.append(
-            oh.make_tensor_value_info(applier, TensorProto.FLOAT, ["n", 3, "h*", "w*"])
-        )
+        vis.append(oh.make_tensor_value_info(applier, TensorProto.FLOAT, ["n", 3, "h*", "w*"]))
         outputs = {"applier": {"name": applier}}
         return outputs, nodes, inits, vis

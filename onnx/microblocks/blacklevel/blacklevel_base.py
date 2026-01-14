@@ -27,5 +27,5 @@ class BlackLevelBase(MicroblockBase):
             oh.make_tensor_value_info(out_name, oh.TensorProto.FLOAT, ["N","C","H","W"]),
         ]
 
-        outputs = {"image": {"name": out_name}}
+        outputs = {"applier": {"name": out_name}}
         return outputs, [node], [], vis

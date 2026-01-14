@@ -64,10 +64,23 @@ def build_all(manifest_file: str, mode: str = "applier"):
         logging.info(f"Building stage {stage_name}: {spec['class']} v{spec['version']}")
         logging.debug(f"Declared inputs: {spec.get('inputs', [])}")
 
-        # Build stage
-        outputs, stage_nodes, stage_inits, stage_vis = mb.build_applier(
-            stage_name, prev_stages=spec.get("inputs", [])
-        )
+        try:
+
+            if mode == "applier":
+                outputs, stage_nodes, stage_inits, stage_vis = mb.build_applier(
+                    stage_name, prev_stages=spec.get("inputs", [])
+                )
+            elif mode == "algo" and hasattr(mb, "build_algo"):
+                outputs, stage_nodes, stage_inits, stage_vis = mb.build_algo(
+                stage_name, prev_stages=spec.get("inputs", [])
+                )
+            else:
+                logging.warning(f"Stage {stage_name} has no build_algo, skipping")
+                continue
+
+        except Exception as e:
+            logging.error(f"Exception in stage {stage_name} ({spec['class']} v{spec['version']}): {e}")
+            raise
 
         nodes.extend(stage_nodes)
         inits.extend(stage_inits)
@@ -107,5 +120,5 @@ if __name__ == "__main__":
     import_all_microblocks()
     logging.info(f"Registry contents: {dump_registry()}")
     manifest_file = sys.argv[1] if len(sys.argv) > 1 else "pipeline.json"
-    build_all(manifest_file, mode="applier")
+    #build_all(manifest_file, mode="applier")
     build_all(manifest_file, mode="algo")

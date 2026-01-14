@@ -2,8 +2,9 @@
 
 import onnx.helper as oh
 from onnx import TensorProto
+from microblocks.base import MicroblockBase
 
-class LensLCSBase:
+class LensLCSBase(MicroblockBase):
     """
     LensLCSBase (v0)
     ----------------

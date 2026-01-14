@@ -64,3 +64,10 @@ class BayerNormBase(MicroblockBase):
 
         outputs = {"applier": {"name": out_name}}
         return outputs, [slice_node, reshape_node, div_node], [], vis
+
+    def build_algo(self, stage: str, prev_stages=None):
+        """
+        Wrapper for algorithmic build. By default, just calls build_applier().
+        This keeps applier and algo paths consistent unless overridden.
+        """
+        return self.build_applier(stage, prev_stages=prev_stages)
