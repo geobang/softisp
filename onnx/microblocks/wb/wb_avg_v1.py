@@ -6,14 +6,10 @@
 #   - Optional CCT estimation
 # -----------------------------------------------------------------------------
 
-import onnx.helper as oh
-from onnx import TensorProto
-import numpy as np
+# in wb_avg_v1.py
+from microblocks.wb.wb_base import AWBBase
 
-from .wb_base import WBBase
-
-
-class WBAvgV1(WBBase):
+class WBAvgV1(AWBBase):
     """
     WBAvgV1
     -------

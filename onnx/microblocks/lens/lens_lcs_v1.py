@@ -7,27 +7,27 @@ from .lens_lcs_base import LensLCSBase
 
 class LensLCSV1(LensLCSBase):
     """
-    LensLCSV1
-    ---------
+    LensLCSV1 (v1)
+    --------------
     Inherits LensLCSBase and extends it with resize support.
 
     Needs:
-        - input_image [n,3,h,w]
-        - lcs_coeffs [H,W]
-        - resize_factor []
+        - applier [n,3,h,w]       : image tensor from upstream
+        - lcs_coeffs [H,W]        : full-resolution correction coefficients
+        - resize_factor []        : scalar (e.g. 0.5 for half-res)
 
     Provides:
-        - applier [n,3,h*resize_factor,w*resize_factor]
-        - lcs_coeffs_resized [h*resize_factor,w*resize_factor]
+        - applier [n,3,h*resize_factor,w*resize_factor] : corrected image tensor
+        - lcs_coeffs_resized [h*resize_factor,w*resize_factor] : resized coefficient map
 
     Behavior:
         - build_algo: resizes lcs_coeffs according to resize_factor
-        - build_applier: reuses LensLCSBase multiplication logic, but applies resized coeffs
+        - build_applier: applies resized lcs_coeffs to applier (image)
     """
 
     name = "lens_lcs_v1"
     version = "v1"
-    needs = ["input_image", "lcs_coeffs", "resize_factor"]
+    needs = ["applier", "lcs_coeffs", "resize_factor"]
     provides = ["applier", "lcs_coeffs_resized"]
 
     def build_algo(self, stage: str, prev_stages=None):
@@ -79,12 +79,11 @@ class LensLCSV1(LensLCSBase):
 
     def build_applier(self, stage: str, prev_stages=None):
         """
-        Apply resized lcs_coeffs to input_image.
-        Reuses LensLCSBase logic but swaps in lcs_coeffs_resized.
+        Apply resized lcs_coeffs to applier (image).
         """
         vis, nodes, inits = [], [], []
         upstream = prev_stages[0] if prev_stages else stage
-        input_image = f"{upstream}.input_image"
+        input_image = f"{upstream}.applier"
         lcs_resized = f"{upstream}.lcs_coeffs_resized"
 
         applier = f"{stage}.applier"

@@ -5,25 +5,25 @@ from onnx import TensorProto
 
 class LensLCSBase:
     """
-    LensLCSBase
-    -----------
+    LensLCSBase (v0)
+    ----------------
     Canonical base microblock for Lens Correction & Shading (LCS).
 
     Needs:
-        - input_image [n,3,h,w] : RGB image tensor
-        - lcs_coeffs [h,w]      : per-pixel correction coefficients
+        - applier [n,3,h,w] : image tensor from upstream
+        - lcs_coeffs [h,w]  : per-pixel correction coefficients
 
     Provides:
-        - applier [n,3,h,w]     : corrected image tensor
+        - applier [n,3,h,w] : corrected image tensor
 
     Behavior:
         - build_algo: declares lcs_coeffs as an external need (no generation here)
-        - build_applier: multiplies input_image by lcs_coeffs (broadcasted across channels)
+        - build_applier: multiplies applier × lcs_coeffs (broadcasted across channels)
     """
 
     name = "lens_lcs_base"
     version = "v0"
-    needs = ["input_image", "lcs_coeffs"]
+    needs = ["applier", "lcs_coeffs"]
     provides = ["applier"]
 
     def build_algo(self, stage: str, prev_stages=None):
@@ -34,7 +34,6 @@ class LensLCSBase:
         vis, nodes, inits = [], [], []
         coeffs_name = f"{stage}.lcs_coeffs"
 
-        # Declare lcs_coeffs as a required tensor
         vis.append(
             oh.make_tensor_value_info(coeffs_name, TensorProto.FLOAT, ["h", "w"])
         )
@@ -43,11 +42,11 @@ class LensLCSBase:
 
     def build_applier(self, stage: str, prev_stages=None):
         """
-        Apply lens correction coefficients to input_image.
+        Apply lens correction coefficients to applier (image).
         """
         vis, nodes, inits = [], [], []
         upstream = prev_stages[0] if prev_stages else stage
-        input_image = f"{upstream}.input_image"
+        input_image = f"{upstream}.applier"
         lcs_coeffs = f"{upstream}.lcs_coeffs"
 
         applier = f"{stage}.applier"
