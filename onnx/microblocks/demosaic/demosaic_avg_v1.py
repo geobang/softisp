@@ -60,4 +60,4 @@ class DemosaicAvgV1(DemosaicBase):
         return outputs, nodes, inits, vis
 
     def build_applier(self, stage: str, prev_stages=None):
-        return self.build_algo(self, stage, prev_stages)
+        return self.build_algo(stage, prev_stages)
