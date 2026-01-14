@@ -30,7 +30,7 @@ class LensLCSV1(LensLCSBase):
         """
         vis, nodes, inits = [], [], []
         upstream = prev_stages[0] if prev_stages else stage
-	input_image = f"{upstream}.applier"
+        input_image = f"{upstream}.applier"
 
         # External input coeffs
         lcs_coeffs = f"{stage}.lcs_coeffs"
@@ -89,7 +89,7 @@ class LensLCSV1(LensLCSBase):
                 "Mul",
                 inputs=[input_image, lcs_resized],
                 outputs=[applier],
-                name=f"{stage}.mul_apply",
+                name=f"{stage}.algo_mul_apply",
             )
         )
 
@@ -100,21 +100,31 @@ class LensLCSV1(LensLCSBase):
         }
         return outputs, nodes, inits, vis
 
-
     def build_applier(self, stage: str, prev_stages=None):
         """
-        Apply resized lcs_coeffs to applier (image).
+        Apply lcs_coeffs (external input) to applier (image).
         """
         vis, nodes, inits = [], [], []
         upstream = prev_stages[0] if prev_stages else stage
-        input_image = f"{upstream}.applier"
-        lcs_resized = f"{stage}.lcs_coeffs_resized"
 
+        # Upstream image
+        input_image = f"{upstream}.applier"
+        vis.append(
+            oh.make_tensor_value_info(input_image, TensorProto.FLOAT, ["n", 3, "h*", "w*"])
+        )
+
+        # Independent input coeffs (declared as input, not output)
+        lcs_coeffs = f"{stage}.lcs_coeffs"
+        vis.append(
+            oh.make_tensor_value_info(lcs_coeffs, TensorProto.FLOAT, ["h*", "w*"])
+        )
+
+        # Output corrected image
         applier = f"{stage}.applier"
         nodes.append(
             oh.make_node(
                 "Mul",
-                inputs=[input_image, lcs_resized],
+                inputs=[input_image, lcs_coeffs],
                 outputs=[applier],
                 name=f"{stage}.mul_apply",
             )
@@ -124,30 +134,6 @@ class LensLCSV1(LensLCSBase):
         )
 
         outputs = {
-            "applier": {"name": applier},
-            "lcs_coeffs": {"name": f"{stage}.lcs_coeffs_out"},
-            "lcs_coeffs_resized": {"name": lcs_resized}
+            "applier": {"name": applier}
         }
-        return outputs, nodes, inits, vis
-
-    def build_applier(self, stage: str, prev_stages=None):
-        """
-        Apply resized lcs_coeffs to applier (image).
-        """
-        vis, nodes, inits = [], [], []
-        upstream = prev_stages[0] if prev_stages else stage
-        input_image = f"{upstream}.applier"
-        lcs_resized = f"{upstream}.lcs_coeffs"
-
-        applier = f"{stage}.applier"
-        nodes.append(
-            oh.make_node(
-                "Mul",
-                inputs=[input_image, lcs_resized],
-                outputs=[applier],
-                name=f"{stage}.mul_apply",
-            )
-        )
-        vis.append(oh.make_tensor_value_info(applier, TensorProto.FLOAT, ["n", 3, "h*", "w*"]))
-        outputs = {"applier": {"name": applier}}
         return outputs, nodes, inits, vis
