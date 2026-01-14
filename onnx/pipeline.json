@@ -8,9 +8,9 @@
     "demosaic": {"class":"demosaic_avg_v1","version":"v1","inputs":["blacklevel"]},
     "resize": {"class":"resize_v1","version":"v1","inputs":["demosaic"]},
     "lcs": {"class":"lens_lcs_v1","version":"v1","inputs":["resize"]},
-    "awb": {"class":"awb_base","version":"v1","inputs":["lcs"]},
+    "awb": {"class":"wb_avg_v1","version":"v1","inputs":["lcs"]},
     "ccm": {"class":"ccm_quadratic_v1","version":"v1","inputs":["awb"]},
-    "tonemap": {"class":"tonemap_base","version":"v0","inputs":["resize"]},
+    "tonemap": {"class":"tonemap_base","version":"v0","inputs":["ccm"]},
     "gamma": {"class":"gamma_base","version":"v0","inputs":["tonemap"]},
     "yuv": {"class":"yuvconvert_base","version":"v0","inputs":["gamma"]},
     "chroma": {"class":"chroma_subsample_base","version":"v0","inputs":["yuv"]}
