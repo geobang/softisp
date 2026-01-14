@@ -1,0 +1,103 @@
+# onnx/microblocks/demosaic/demosaic_avg_resize_v1.py
+
+import onnx.helper as oh
+from onnx import TensorProto
+from .demosaic_base import DemosaicBase
+
+
+class DemosaicAvgResizeV1(DemosaicBase):
+    """
+    DemosaicAvgResizeV1
+    -------------------
+    - Needs: input_image [n,4,h,w] (R,G1,G2,B planes)
+    - Provides: applier [n,3,h/2,w/2], lux_scalar []
+    - Behavior:
+        * Average G1 and G2 -> Gavg
+        * Concat R,Gavg,B -> RGB
+        * Resize to half resolution (h/2,w/2) using box filter if supported, else bilinear
+        * Compute lux from resized RGB
+    """
+
+    name = "demosaic_avg_resize_v1"
+    version = "v1"
+    needs = ["input_image"]
+    provides = ["applier", "lux_scalar"]
+
+    def _split_rggb(self, stage, input_image, nodes, vis):
+        r, g1, g2, b = [f"{stage}.{ch}" for ch in ("r","g1","g2","b")]
+        nodes.append(oh.make_node("Split", inputs=[input_image], outputs=[r,g1,g2,b],
+                                  name=f"{stage}.split_rg1g2b", axis=1))
+        return r, g1, g2, b
+
+    def _avg_green(self, stage, g1, g2, nodes, inits):
+        gsum = f"{stage}.g_sum"; gavg = f"{stage}.gavg"; half = f"{stage}.half"
+        nodes.append(oh.make_node("Add", inputs=[g1,g2], outputs=[gsum], name=f"{stage}.add_g"))
+        inits.append(oh.make_tensor(half, TensorProto.FLOAT, [], [0.5]))
+        nodes.append(oh.make_node("Mul", inputs=[gsum,half], outputs=[gavg], name=f"{stage}.mul_half"))
+        return gavg
+
+    def _concat_rgb(self, stage, r, gavg, b, nodes, vis):
+        rgb = f"{stage}.rgb"
+        nodes.append(oh.make_node("Concat", inputs=[r,gavg,b], outputs=[rgb],
+                                  name=f"{stage}.concat_rgb", axis=1))
+        vis.append(oh.make_tensor_value_info(rgb, TensorProto.FLOAT, ["n",3,"h","w"]))
+        return rgb
+
+    def _resize_half(self, stage, rgb, nodes, vis):
+        applier = f"{stage}.applier"
+        # Resize to half resolution using Resize op
+        # Prefer box filter if supported, else bilinear
+        size_name = f"{stage}.size"
+        nodes.append(oh.make_node("Constant", inputs=[], outputs=[size_name],
+                                  value=oh.make_tensor(size_name, TensorProto.INT64, [4], [0,3,"h/2","w/2"])))
+        # ONNX Resize requires scales or sizes; here we use scales
+        scales = f"{stage}.scales"
+        nodes.append(oh.make_node("Constant", inputs=[], outputs=[scales],
+                                  value=oh.make_tensor(scales, TensorProto.FLOAT, [4], [1.0,1.0,0.5,0.5])))
+        mode = "box"  # if runtime supports; else fallback to "linear"
+        nodes.append(oh.make_node("Resize", inputs=[rgb, "", scales], outputs=[applier],
+                                  name=f"{stage}.resize_half", mode=mode))
+        vis.append(oh.make_tensor_value_info(applier, TensorProto.FLOAT, ["n",3,"h/2","w/2"]))
+        return applier
+
+    def _compute_lux(self, stage, applier, nodes, vis, inits):
+        r,g,b = [f"{stage}.lux_{ch}" for ch in ("r","g","b")]
+        nodes.append(oh.make_node("Split", inputs=[applier], outputs=[r,g,b],
+                                  name=f"{stage}.lux_split", axis=1))
+        wr,wg,wb = [f"{stage}.w_{ch}" for ch in ("r","g","b")]
+        inits += [
+            oh.make_tensor(wr, TensorProto.FLOAT, [], [0.2126]),
+            oh.make_tensor(wg, TensorProto.FLOAT, [], [0.7152]),
+            oh.make_tensor(wb, TensorProto.FLOAT, [], [0.0722]),
+        ]
+        yr,yg,yb = [f"{stage}.y_{ch}" for ch in ("r","g","b")]
+        nodes.append(oh.make_node("Mul", inputs=[r,wr], outputs=[yr], name=f"{stage}.mul_yr"))
+        nodes.append(oh.make_node("Mul", inputs=[g,wg], outputs=[yg], name=f"{stage}.mul_yg"))
+        nodes.append(oh.make_node("Mul", inputs=[b,wb], outputs=[yb], name=f"{stage}.mul_yb"))
+        ysum1,ysum = f"{stage}.ysum1",f"{stage}.ysum"
+        nodes.append(oh.make_node("Add", inputs=[yr,yg], outputs=[ysum1], name=f"{stage}.add_yrg"))
+        nodes.append(oh.make_node("Add", inputs=[ysum1,yb], outputs=[ysum], name=f"{stage}.add_y"))
+        lux_hw,lux = f"{stage}.lux_hw",f"{stage}.lux_scalar"
+        nodes.append(oh.make_node("ReduceMean", inputs=[ysum], outputs=[lux_hw],
+                                  name=f"{stage}.lux_mean_hw", axes=[2,3], keepdims=0))
+        nodes.append(oh.make_node("ReduceMean", inputs=[lux_hw], outputs=[lux],
+                                  name=f"{stage}.lux_mean_n", axes=[0], keepdims=0))
+        vis.append(oh.make_tensor_value_info(lux, TensorProto.FLOAT, []))
+        return lux
+
+    def build_algo(self, stage: str, prev_stages=None):
+        vis,nodes,inits = [],[],[]
+        upstream = prev_stages[0] if prev_stages else stage
+        input_image = f"{upstream}.input_image"
+
+        r,g1,g2,b = self._split_rggb(stage,input_image,nodes,vis)
+        gavg = self._avg_green(stage,g1,g2,nodes,inits)
+        rgb = self._concat_rgb(stage,r,gavg,b,nodes,vis)
+        applier = self._resize_half(stage,rgb,nodes,vis)
+        lux = self._compute_lux(stage,applier,nodes,vis,inits)
+
+        outputs = {
+            "applier":{"name":applier},
+            "lux_scalar":{"name":lux},
+        }
+        return outputs,nodes,inits,vis
