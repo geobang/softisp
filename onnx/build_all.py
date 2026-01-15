@@ -53,10 +53,11 @@ def build_all(manifest_file: str, mode: str = "applier"):
     declared_inputs = set()  # names declared by stages to be fed from outside
     final_out = None
 
-    reg = Registry()
+    reg = Registry().getInstance()
     # This is a new instance, so need to init again
     reg.import_all_microblocks()
     reg.clear_all_outputs()
+    reg.set_dynamic_map(stages_spec)
 
     # Seed the canonical input_image as a graph input (common convention)
     input_image_vi = oh.make_tensor_value_info("input_image", onnx.TensorProto.FLOAT, ["N","C","H","W"])
