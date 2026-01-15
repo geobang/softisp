@@ -1,45 +1,53 @@
 # microblocks/base.py
-import onnx.helper as oh
+from microblocks.registry import Registry
 
 class MicroblockBase:
     """
     Abstract base class for all microblocks.
-    Provides a uniform interface and default attributes.
-    Concrete subclasses must override `name`, `version`, and implement build_applier().
     """
-
-    # Default attributes (will be overridden in subclasses)
     name = "unnamed"
     version = "v0"
-    deps = []   # list of allowed upstream class names
-    needs = []  # list of required tensors (stage-scoped)
+    deps = []
+    needs = []
+
+    # 🔹 Shared registry instance (set in build_all.py)
+    registry: Registry = None
 
     def __init__(self):
-        # You can add common initialization here if needed
-        pass
+        # 🔹 Auto‑init registry if not set
+        if MicroblockBase.registry is None:
+            MicroblockBase.registry = Registry()
+        # 🔹 Auto‑register this class into the registry
+        MicroblockBase.registry.register(self.__class__.name,
+                                         self.__class__.version,
+                                         self.__class__)
 
     def build_applier(self, stage: str, prev_stages=None):
-        """
-        Build the ONNX nodes for this microblock.
-        Must be implemented by subclasses.
-        Should return: (outputs, nodes, inits, vis)
-        - outputs: dict of logical outputs → {"name": tensor_name}
-        - nodes: list of onnx.NodeProto
-        - inits: list of onnx.TensorProto
-        - vis: list of onnx.ValueInfoProto
-        """
-        raise NotImplementedError(f"{self.__class__.__name__} must implement build_applier()")
+        raise NotImplementedError
 
-    @classmethod
-    def contract(cls):
-        """
-        Return a summary of the block’s declared contract:
-        - name, version, deps, needs
-        Useful for coordinator validation.
-        """
-        return {
-            "name": cls.name,
-            "version": cls.version,
-            "deps": cls.deps,
-            "needs": cls.needs,
-        }
+    def build_algo(self, stage: str, prev_stages=None):
+        raise NotImplementedError
+
+    def build_coordinator(self, stage: str, prev_stages=None):
+        raise NotImplementedError
+
+    def get_build_applier(self, stage: str, prev_stages=None):
+        outputs, nodes, inits, vis = self.build_applier(stage, prev_stages)
+        if MicroblockBase.registry is not None:
+            flat = {k: v["name"] for k, v in outputs.items()}
+            MicroblockBase.registry.register_outputs(stage, self.__class__.__name__, flat)
+        return outputs, nodes, inits, vis
+
+    def get_build_algo(self, stage: str, prev_stages=None):
+        outputs, nodes, inits, vis = self.build_algo(stage, prev_stages)
+        if MicroblockBase.registry is not None:
+            flat = {k: v["name"] for k, v in outputs.items()}
+            MicroblockBase.registry.register_outputs(stage, self.__class__.__name__, flat)
+        return outputs, nodes, inits, vis
+
+    def get_build_coordinator(self, stage: str, prev_stages=None):
+        outputs, nodes, inits, vis = self.build_coordinator(stage, prev_stages)
+        if MicroblockBase.registry is not None:
+            flat = {k: v["name"] for k, v in outputs.items()}
+            MicroblockBase.registry.register_outputs(stage, self.__class__.__name__, flat)
+        return outputs, nodes, inits, vis

@@ -1,6 +1,8 @@
 import os, sys, json, logging, onnx
 import onnx.helper as oh
-from microblocks.registry import REGISTRY, import_all_microblocks, dump_registry
+from microblocks.registry import Registry
+
+#REGISTRY, import_all_microblocks, dump_registry
 
 logging.basicConfig(level=logging.DEBUG, format="%(levelname)s:%(message)s")
 
@@ -51,15 +53,17 @@ def build_all(manifest_file: str, mode: str = "applier"):
     declared_inputs = set()  # names declared by stages to be fed from outside
     final_out = None
 
+    reg = Registry()
+    # This is a new instance, so need to init again
+    reg.import_all_microblocks()
+    reg.clear_all_outputs()
+
     # Seed the canonical input_image as a graph input (common convention)
     input_image_vi = oh.make_tensor_value_info("input_image", onnx.TensorProto.FLOAT, ["N","C","H","W"])
     graph_inputs.append(input_image_vi)
 
     for stage_name, spec in stages_spec.items():
-        cls_key = (spec["class"], spec["version"])
-        if cls_key not in REGISTRY:
-            raise KeyError(f"Registry missing class {cls_key}")
-        mb_cls = REGISTRY[cls_key]
+        mb_cls = reg.dump_registry()[(spec["class"], spec["version"])]
         mb = mb_cls()
 
         logging.info(f"Building stage {stage_name}: {spec['class']} v{spec['version']}")
@@ -68,11 +72,11 @@ def build_all(manifest_file: str, mode: str = "applier"):
         try:
 
             if mode == "applier":
-                outputs, stage_nodes, stage_inits, stage_vis = mb.build_applier(
+                outputs, stage_nodes, stage_inits, stage_vis = mb.get_build_applier(
                     stage_name, prev_stages=spec.get("inputs", [])
                 )
             elif mode == "algo" and hasattr(mb, "build_algo"):
-                outputs, stage_nodes, stage_inits, stage_vis = mb.build_algo(
+                outputs, stage_nodes, stage_inits, stage_vis = mb.get_build_algo(
                 stage_name, prev_stages=spec.get("inputs", [])
                 )
             else:
@@ -118,8 +122,10 @@ def build_all(manifest_file: str, mode: str = "applier"):
     save_model(nodes, inits, vis, graph_inputs, final_out, out_path, manifest["canonical_name"])
 
 if __name__ == "__main__":
-    import_all_microblocks()
-    logging.info(f"Registry contents: {dump_registry()}")
+    #reg = Registry()
+    #reg.import_all_microblocks()
+    #reg.clear_all_outputs()
+    #logging.info(f"Registry contents: {reg.dump_registry()}")
     manifest_file = sys.argv[1] if len(sys.argv) > 1 else "pipeline.json"
     build_all(manifest_file, mode="algo")
     build_all(manifest_file, mode="applier")
