@@ -39,3 +39,54 @@ class AWBBase(MicroblockBase):
         result.appendInput(input_image)
         result.appendInput(gains)          # <-- minimal fix
         return result
+
+    def build_coordinator(self, stage: str, prev_stages=None):
+        """
+        Coordinator: stabilizes wb_gains by clipping the delta
+        relative to previous frame gains.
+        """
+        # ---- Wiring trunk ----
+        curr_gains  = f'{stage}.wb_gains'       # algo output (external input)
+        prev_gains  = f'{stage}.wb_gains_prev'  # previous stabilized gains
+        delta_name  = f'{stage}.delta'
+        clipped     = f'{stage}.delta_clipped'
+        out_gains   = f'{stage}.wb_gains_out'
+
+        # ---- Node trunk ----
+        sub_node = oh.make_node(
+            'Sub', inputs=[curr_gains, prev_gains],
+            outputs=[delta_name], name=f'{stage}_awb_delta'
+        )
+
+        min_tensor = f'{stage}.min_delta'
+        max_tensor = f'{stage}.max_delta'
+        clip_node = oh.make_node(
+            'Clip', inputs=[delta_name, min_tensor, max_tensor],
+            outputs=[clipped], name=f'{stage}_awb_clip'
+        )
+
+        add_node = oh.make_node(
+            'Add', inputs=[prev_gains, clipped],
+            outputs=[out_gains], name=f'{stage}_awb_out'
+        )
+
+        # ---- Initializers trunk ----
+        delta_init_min = oh.make_tensor(min_tensor, TensorProto.FLOAT, [1], [-0.2])
+        delta_init_max = oh.make_tensor(max_tensor, TensorProto.FLOAT, [1], [0.2])
+
+        # ---- ValueInfo trunk ----
+        vis = [
+            oh.make_tensor_value_info(curr_gains, TensorProto.FLOAT, [3]),
+            oh.make_tensor_value_info(prev_gains, TensorProto.FLOAT, [3]),
+            oh.make_tensor_value_info(out_gains,  TensorProto.FLOAT, [3]),
+        ]
+
+        # ---- Outputs trunk ----
+        outputs = {'wb_gains_out': {'name': out_gains}}
+
+        # ---- BuildResult trunk ----
+        result = BuildResult(outputs, [sub_node, clip_node, add_node],
+                             [delta_init_min, delta_init_max], vis)
+        result.appendInput(curr_gains)   # algo output
+        result.appendInput(prev_gains)   # previous gains
+        return result
