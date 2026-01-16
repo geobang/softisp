@@ -19,9 +19,6 @@ class ToneMapBase(MicroblockBase):
     """
     name = "tonemap_base"
     version = "v0"
-    deps = ["resize_base"]
-    needs = ["tonemap_curve"]
-    provides = ["applier", "tonemap_curve"]
 
     def build_applier(self, stage: str, prev_stages=None):
         upstream = prev_stages[0] if prev_stages else stage

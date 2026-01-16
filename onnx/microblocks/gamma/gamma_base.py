@@ -12,9 +12,6 @@ class GammaBase(MicroblockBase):
     """
     name = "gamma_base"
     version = "v0"
-    deps = ["tonemap_base"]
-    needs = []  # no mandatory needs
-    provides = ["applier", "gamma_value"]
 
     # -------------------------------
     # Applier (runtime gamma correction)

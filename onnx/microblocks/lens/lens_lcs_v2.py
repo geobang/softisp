@@ -23,8 +23,6 @@ class LensLCSV2(LensLCSBase):
     """
     name = 'lens_lcs_v2'
     version = 'v2'
-    needs = ['applier', 'lcs_params']
-    provides = ['applier', 'lcs_coeffs']
 
     def build_algo(self, stage: str, prev_stages=None):
         """

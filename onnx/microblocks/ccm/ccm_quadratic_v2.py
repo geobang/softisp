@@ -11,9 +11,6 @@ class CCMQuadraticV2(CCMQuadraticV1):
     """
     name = 'ccm_quadratic_v2'
     version = 'v2'
-    deps = CCMQuadraticV1.deps
-    needs = CCMQuadraticV1.needs + ['stats_tiles', 'neutral_mask', 'ci_weights']
-    provides = CCMQuadraticV1.provides + ['ci_vec', 'ci_scalar', 'post_ccm_tiles']
 
     def build_algo(self, stage: str, prev_stages=None):
         outputs, nodes, inits, vis = super().build_algo(stage, prev_stages)

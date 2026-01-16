@@ -13,9 +13,6 @@ class CCMBase(MicroblockBase):
     """
     name = "ccm_base"
     version = "v0"
-    deps = []          # no mandatory dependencies
-    needs = []         # no mandatory needs
-    provides = ["applier", "ccm"]
 
     # -------------------------------
     # Applier (runtime CCM application)

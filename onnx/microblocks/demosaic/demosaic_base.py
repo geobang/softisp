@@ -11,8 +11,6 @@ class DemosaicBase(MicroblockBase):
     """
     name = 'demosaic_base'
     version = 'v0'
-    deps = ['black_level_base']
-    needs = ['kernels']
 
     def build_applier(self, stage: str, prev_stages=None):
         out_name = f'{stage}.applier'

@@ -21,9 +21,6 @@ class GammaV2(GammaBase):
     """
     name = 'gamma_v2'
     version = 'v2'
-    deps = ['tonemap_base']
-    needs = ['input_image', 'gamma_value', 'lux_scalar']
-    provides = ['applier', 'gamma_effective']
 
     def _normalize_lux(self, stage, lux_scalar, nodes, vis, inits):
         lux_ref = f'{stage}.lux_ref'

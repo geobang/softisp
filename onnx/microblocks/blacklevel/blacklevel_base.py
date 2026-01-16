@@ -11,9 +11,6 @@ class BlackLevelBase(MicroblockBase):
     """
     name = 'blacklevel'
     version = 'v0'
-    deps = ['stride_remove_crop']
-    needs = ['offset']
-    provides = ['applier']
 
     def build_applier(self, stage: str, prev_stages=None):
         upstream = prev_stages[0] if prev_stages else stage

@@ -22,9 +22,6 @@ class ToneFilmicV1(ToneMapBase):
     """
     name = "tonemap_filmic_v1"
     version = "v1"
-    deps = ["resize_base"]
-    needs = ["input_image"]  # upstream image only; coeffs are internal but overrideable
-    provides = ["applier", "tone_coeffs", "ci_vec", "ci_scalar"]
 
     # -------------------------------
     # Trunk 1 — Provide static coeffs

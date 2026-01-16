@@ -11,9 +11,6 @@ class StrideRemoveCropBase(MicroblockBase):
     """
     name = 'stride_remove_crop'
     version = 'v0'
-    deps = ['image_desc_base']
-    needs = ['crop_starts', 'crop_ends']
-    provides = ['applier']
 
     def build_applier(self, stage: str, prev_stages=None):
         upstream = prev_stages[0] if prev_stages else stage

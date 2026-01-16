@@ -11,8 +11,6 @@ class BayerNormBase(MicroblockBase):
     """
     name = 'bayernorm_base'
     version = 'v0'
-    deps = ['image_desc_base']
-    needs = ['norm_scale']  # plus slice/reshape params provided by coordinator
 
     def build_applier(self, stage: str, prev_stages=None):
         upstream = prev_stages[0] if prev_stages else stage

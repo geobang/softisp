@@ -22,8 +22,6 @@ class LensLCSBase(MicroblockBase):
     """
     name = 'lens_lcs_base'
     version = 'v0'
-    needs = ['applier', 'lcs_coeffs']
-    provides = ['applier']
 
     def build_algo(self, stage: str, prev_stages=None):
         """

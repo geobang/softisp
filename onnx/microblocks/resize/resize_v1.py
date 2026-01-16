@@ -16,8 +16,6 @@ class ResizeV1(ResizeBase):
     """
     name = 'resize_v1'
     version = 'v1'
-    needs = ['resize_factor']
-    provides = ['applier', 'resize_factor']
 
     def build_algo(self, stage: str, prev_stages=None):
         vis, nodes, inits = ([], [], [])

@@ -19,9 +19,6 @@ class AWBLuxV1(AWBBase):
     """
     name = 'awb_lux_v1'
     version = 'v1'
-    deps = ['demosaic_avg_lux_v1']
-    needs = ['input_image', 'lux_scalar']
-    provides = ['wb_gains', 'applier']
 
     def _split_rgb(self, stage, input_image, nodes, vis):
         r = f'{stage}.r'

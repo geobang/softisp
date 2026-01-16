@@ -11,8 +11,6 @@ class ResizeBase(MicroblockBase):
     """
     name = 'resize_base'
     version = 'v0'
-    deps = ['ccm_base']
-    needs = ['target_h', 'target_w']
 
     def build_applier(self, stage: str, prev_stages=None):
         out_name = f'{stage}.applier'

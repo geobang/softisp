@@ -14,9 +14,6 @@ class ToneFilmicV3(ToneFilmicV2):
     """
     name = 'tonemap_filmic_v3'
     version = 'v3'
-    deps = ['resize_base']
-    needs = ['input_image', 'neutral_mask', 'ci_weights']
-    provides = ['applier', 'tone_coeffs', 'ci_vec', 'ci_scalar']
 
     def _provide_lut_info(self, stage, inits, vis):
         lut_name = f'{stage}.lut_default'

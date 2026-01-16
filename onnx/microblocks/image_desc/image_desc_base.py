@@ -10,8 +10,6 @@ class ImageDescBase(MicroblockBase):
     """
     name = 'image_desc_base'
     version = 'v0'
-    deps = []
-    needs = ['image', 'width']
 
     def build_applier(self, stage: str, prev_stages=None):
 	# This is ever first stage that seeded by build_all.py

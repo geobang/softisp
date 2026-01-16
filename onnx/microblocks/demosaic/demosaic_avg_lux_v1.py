@@ -19,8 +19,6 @@ class DemosaicAvgLuxV1(DemosaicBase):
     """
     name = 'demosaic_avg_lux_v1'
     version = 'v1'
-    needs = ['input_image']
-    provides = ['applier', 'lux_scalar']
 
     def _split_rggb(self, stage, input_image, nodes, vis):
         r = f'{stage}.r'

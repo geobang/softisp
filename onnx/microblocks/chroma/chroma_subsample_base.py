@@ -14,9 +14,6 @@ class ChromaSubsampleBase(MicroblockBase):
     """
     name = "chroma_subsample_base"
     version = "v0"
-    deps = []          # no mandatory dependencies
-    needs = []         # no mandatory needs
-    provides = ["applier", "subsample_scale"]
 
     # -------------------------------
     # Applier (runtime subsampling)

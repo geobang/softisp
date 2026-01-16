@@ -13,8 +13,6 @@ class AWBBase(MicroblockBase):
     """
     name = 'awb_base'
     version = 'v0'
-    deps = ['demosaic_base']
-    needs = ['wb_gains']
 
     def build_applier(self, stage: str, prev_stages=None):
         out_name = f'{stage}.applier'

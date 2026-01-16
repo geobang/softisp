@@ -19,8 +19,6 @@ class DemosaicAvgV1(DemosaicBase):
     """
     name = 'demosaic_avg_v1'
     version = 'v1'
-    needs = ['input_image']
-    provides = ['applier']
 
     def _split_rggb(self, stage, input_image, nodes, vis):
         r, g1, g2, b = [f'{stage}.{ch}' for ch in ('r', 'g1', 'g2', 'b')]

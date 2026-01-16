@@ -85,8 +85,6 @@ class MicroblockBase:
     """
     name = "unnamed"
     version = "v0"
-    deps = []
-    needs = []
 
     # Shared registry instance
     registry: Registry = Registry.getInstance()

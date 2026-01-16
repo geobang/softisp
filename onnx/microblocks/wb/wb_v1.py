@@ -13,8 +13,6 @@ class WhiteBalanceV1(AWBBase):
     """
     name = 'awb_base'
     version = 'v1'
-    deps = ['demosaic_base']
-    needs = []
 
     def build_applier(self, stage: str, prev_stages=None):
         upstream = prev_stages[0] if prev_stages else stage

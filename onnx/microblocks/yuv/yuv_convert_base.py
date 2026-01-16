@@ -12,9 +12,6 @@ class YUVConvertBase(MicroblockBase):
     """
     name = "yuvconvert_base"
     version = "v0"
-    deps = []          # no mandatory dependencies
-    needs = []         # no mandatory needs
-    provides = ["applier", "rgb2yuv_matrix"]
 
     def build_applier(self, stage: str, prev_stages=None):
         upstream = prev_stages[0] if prev_stages else stage

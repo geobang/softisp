@@ -17,9 +17,6 @@ class ToneFilmicV2(ToneFilmicV1):
     """
     name = 'tonemap_filmic_v2'
     version = 'v2'
-    deps = ['resize_base']
-    needs = ['input_image', 'lux_scalar']
-    provides = ['applier', 'tone_coeffs', 'ci_vec', 'ci_scalar']
 
     def _bind_or_derive_coeffs(self, stage, input_image, lux_scalar, nodes, inits, vis):
         """

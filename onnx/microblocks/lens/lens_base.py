@@ -12,8 +12,6 @@ class LcsBase(MicroblockBase):
     """
     name = 'lcs_base'
     version = 'v0'
-    deps = ['ccm_base']
-    needs = ['lcs_gain_map']
 
     def build_applier(self, stage: str, prev_stages=None):
         out_name = f'{stage}.applier'
