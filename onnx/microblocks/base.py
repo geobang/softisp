@@ -67,6 +67,7 @@ class BuildResult:
         func.input.extend(input_names)
         func.output.extend(output_names)
         func.node.extend(func_nodes)
+        func.opset_import.extend([oh.make_operatorsetid("", 13)])
 
         call_node = oh.make_node(func_name, inputs=input_names, outputs=output_names, domain="softisp")
         return func, call_node
