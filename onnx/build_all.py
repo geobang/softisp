@@ -39,15 +39,22 @@ def save_model(nodes, inits, vis, graph_inputs, final_out, out_path, canonical_n
         ir_version=11,
     )
 
+    if all_function_defs:
+        # Attach your function definitions
+        model.functions.extend(all_function_defs)
+        print("dump functions")
+        print(all_function_defs)
+
+    model.opset_import.clear()
+
     # Add opset imports
     model.opset_import.extend([
         oh.make_operatorsetid("", 13),          # standard ONNX opset
         oh.make_operatorsetid("softisp", 1)     # your custom domain
     ])
 
-    if all_function_defs:
-        # Attach your function definitions
-        model.functions.extend(all_function_defs)
+    for f in model.functions:
+        logging.debug(f"Function attached: {f.domain}:{f.name}")
 
     onnx.checker.check_model(model)
 
