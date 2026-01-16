@@ -40,7 +40,7 @@ class BuildResult:
         # Replace with call node in the outer graph
         self.nodes = [self.call]
 
-    def appendInput(self, name: str, shape=None, desc: str = None):
+    def appendInput(self, name: str, shape=['n', 3, 'h', 'w'], desc: str = None):
         self._ref_inputs[name] = {"name": name, "shape": shape, "desc": desc}
         self._regenerate()
         return self
@@ -97,6 +97,7 @@ class MicroblockBase:
         Example: GammaBase.gamma_base.v2
         """
         init_name = f"{self.__class__.__name__}.{self.name}.{self.version}"
+        #init_name = f"{self.__class__.__name__}.{self.name}"
         return oh.make_tensor(
             name=init_name,
             data_type=onnx.TensorProto.FLOAT,

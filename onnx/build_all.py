@@ -106,6 +106,10 @@ def build_all(manifest_file: str, mode: str = "applier"):
             logging.error(f"Exception in stage {stage_name} ({spec['class']} v{spec['version']}): {e}")
             raise
 
+        logging.info(f"--- Stage {stage_name} ({spec['class']} v{spec['version']}) ---")
+        logging.debug(f"Inputs declared by block: {[inp['name'] for inp in result.inputs.values()]}")
+        logging.debug(f"Outputs declared by block: {[out['name'] for out in result.outputs.values()]}")
+
         # 🔹 collect function definition if present
         if hasattr(result, "func") and result.func is not None:
             all_function_defs.append(result.func)
@@ -158,16 +162,15 @@ def build_all(manifest_file: str, mode: str = "applier"):
             logging.debug(f"Added graph input: {v.name}")
 
     if not final_out:
+        print(final_out)
         raise RuntimeError("No final output tensor produced")
 
     out_path = os.path.join("onnx_out", manifest["canonical_name"], f"{mode}.onnx")
     save_model(nodes, inits, vis, graph_inputs, final_out, out_path, manifest["canonical_name"], all_function_defs)
 
 if __name__ == "__main__":
-    #reg = Registry()
-    #reg.import_all_microblocks()
-    #reg.clear_all_outputs()
-    #logging.info(f"Registry contents: {reg.dump_registry()}")
     manifest_file = sys.argv[1] if len(sys.argv) > 1 else "pipeline.json"
-    build_all(manifest_file, mode="algo")
-    build_all(manifest_file, mode="applier")
+    #build_all(manifest_file, mode="algo")
+    #build_all(manifest_file, mode="applier")
+    mode = sys.argv[2] if len(sys.argv) > 2 else "applier"
+    build_all(manifest_file, mode)
