@@ -2,9 +2,6 @@
 import onnx
 import onnx.helper as oh
 from microblocks.registry import Registry
-
-import onnx
-import onnx.helper as oh
 import inspect
 
 class BuildResult:
@@ -40,7 +37,8 @@ class BuildResult:
 
         func_name = f"{self._owner_cls.__name__}_{getattr(self._owner_cls, 'version', 'v0')}"
         self.func, self.call = self._to_function_and_call(func_name)
-        self.nodes = [self.call]  # replace with call node
+        # Replace with call node in the outer graph
+        self.nodes = [self.call]
 
     def appendInput(self, name: str, shape=None, desc: str = None):
         self._ref_inputs[name] = {"name": name, "shape": shape, "desc": desc}
@@ -56,19 +54,27 @@ class BuildResult:
         input_names  = [inp["name"] for inp in self._ref_inputs.values()]
         output_names = [out["name"] for out in self._ref_outputs.values()]
 
-        func_nodes = list(self._ref_nodes)
+        # 1) Build Constant nodes for initializers FIRST
+        const_nodes = []
         for tensor in self._ref_inits:
-            const_node = oh.make_node("Constant", inputs=[], outputs=[tensor.name], value=tensor)
-            func_nodes.append(const_node)
+            const_nodes.append(
+                oh.make_node("Constant", inputs=[], outputs=[tensor.name], value=tensor)
+            )
 
+        # 2) Then append the actual function body nodes
+        func_nodes = const_nodes + list(self._ref_nodes)
+
+        # 3) Assemble FunctionProto with proper opset import
         func = onnx.FunctionProto()
         func.name = func_name
-        func.domain = "softisp" # 🔹 bounded domain inside BuildResult
+        func.domain = "softisp"
         func.input.extend(input_names)
         func.output.extend(output_names)
         func.node.extend(func_nodes)
+        # Declare that this function uses the standard ONNX opset
         func.opset_import.extend([oh.make_operatorsetid("", 13)])
 
+        # 4) Create the call node in the same domain
         call_node = oh.make_node(func_name, inputs=input_names, outputs=output_names, domain="softisp")
         return func, call_node
 
