@@ -14,13 +14,14 @@ class ImageDescBase(MicroblockBase):
     needs = ['image', 'width']
 
     def build_applier(self, stage: str, prev_stages=None):
-        image_in = f'{stage}.image_in'
-        width_in = f'{stage}.width_in'
+	# This is ever first stage that seeded by build_all.py
+        image_in = f'input_image'
+        width_in = f'input_image.width'
         image_out = f'{stage}.applier'
         nodes = [oh.make_node('Identity', inputs=[image_in], outputs=[image_out], name=f'{stage}_image_id')]
         vis = [oh.make_tensor_value_info(image_in, oh.TensorProto.FLOAT, ['n', 'c', 'h', 'stride']), oh.make_tensor_value_info(image_out, oh.TensorProto.FLOAT, ['n', 'c', 'h', 'stride'])]
-        outputs = {'image': {'name': image_out}}
-        return BuildResult(outputs, nodes, [], vis).appendInput(f'{stage}.applier').appendInput(f'{stage}.width_in')
+        outputs = {'applier': {'name': image_out}}
+        return BuildResult(outputs, nodes, [], vis).appendInput(f'input_image').appendInput(f'input_image.width')
 
     def build_algo(self, stage: str, prev_stages=None):
         """
