@@ -1,6 +1,8 @@
 from microblocks.base import BuildResult
 import onnx.helper as oh
 from microblocks.base import MicroblockBase
+from onnx import TensorProto  # optional, for consistency
+
 
 class AWBBase(MicroblockBase):
     """
@@ -19,7 +21,23 @@ class AWBBase(MicroblockBase):
         gains = f'{stage}.wb_gains'
         upstream = prev_stages[0] if prev_stages else stage
         input_image = f'{upstream}.applier'
+
+        # Node: apply per-channel gains
         node = oh.make_node('Mul', inputs=[input_image, gains], outputs=[out_name], name=f'{stage}_awb')
-        vis = [oh.make_tensor_value_info(input_image, oh.TensorProto.FLOAT, ['n', '3', 'h', 'width']), oh.make_tensor_value_info(gains, oh.TensorProto.FLOAT, [3]), oh.make_tensor_value_info(out_name, oh.TensorProto.FLOAT, ['n', '3', 'h', 'width'])]
+
+        # ValueInfos (optional but helpful for audit)
+        vis = [
+            oh.make_tensor_value_info(input_image, oh.TensorProto.FLOAT, ['n', '3', 'h', 'width']),
+            oh.make_tensor_value_info(gains,    oh.TensorProto.FLOAT, [3]),
+            oh.make_tensor_value_info(out_name, oh.TensorProto.FLOAT, ['n', '3', 'h', 'width']),
+        ]
+
         outputs = {'applier': {'name': out_name}}
-        return BuildResult(outputs, [node], [], vis).appendInput(f'{prev_stages[0]}.applier')
+
+        # Explicit external inputs:
+        # - input_image: dependent (from upstream)
+        # - gains: independent (must be promoted to graph input)
+        result = BuildResult(outputs, [node], [], vis)
+        result.appendInput(input_image)
+        result.appendInput(gains)          # <-- minimal fix
+        return result
