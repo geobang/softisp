@@ -11,7 +11,7 @@ def load_manifest(path: str):
     with open(path, "r") as f:
         return json.load(f)
 
-def save_model(nodes, inits, vis, graph_inputs, final_out, out_path, canonical_name):
+def save_model(nodes, inits, vis, graph_inputs, final_out, out_path, canonical_name, all_function_defs):
     """
     Build and save the ONNX model.
     - nodes: list[onnx.NodeProto]
@@ -38,6 +38,17 @@ def save_model(nodes, inits, vis, graph_inputs, final_out, out_path, canonical_n
         opset_imports=[onnx.helper.make_operatorsetid("", 13)],
         ir_version=11,
     )
+
+    # Add opset imports
+    model.opset_import.extend([
+        oh.make_operatorsetid("", 13),          # standard ONNX opset
+        oh.make_operatorsetid("softisp", 1)     # your custom domain
+    ])
+
+    if all_function_defs:
+        # Attach your function definitions
+        model.functions.extend(all_function_defs)
+
     onnx.checker.check_model(model)
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
@@ -54,6 +65,8 @@ def build_all(manifest_file: str, mode: str = "applier"):
     declared_inputs = set()  # names declared by stages to be fed from outside
     final_out = None
 
+    all_function_defs = []
+
     reg = Registry().getInstance()
     # This is a new instance, so need to init again
     reg.import_all_microblocks()
@@ -63,6 +76,8 @@ def build_all(manifest_file: str, mode: str = "applier"):
     # Seed the canonical input_image as a graph input (common convention)
     input_image_vi = oh.make_tensor_value_info("input_image", onnx.TensorProto.FLOAT, ["N","C","H","W"])
     graph_inputs.append(input_image_vi)
+    input_image_width_vi = oh.make_tensor_value_info("input_image.width", oh.TensorProto.FLOAT, 'n')
+    graph_inputs.append(input_image_width_vi)
 
     for stage_name, spec in stages_spec.items():
         mb_cls = reg.dump_registry()[(spec["class"], spec["version"])]
@@ -88,6 +103,10 @@ def build_all(manifest_file: str, mode: str = "applier"):
         except Exception as e:
             logging.error(f"Exception in stage {stage_name} ({spec['class']} v{spec['version']}): {e}")
             raise
+
+        # 🔹 collect function definition if present
+        if hasattr(result, "func") and result.func is not None:
+            all_function_defs.append(result.func)
 
         nodes.extend(result.nodes)
         inits.extend(result.inits)
@@ -121,7 +140,7 @@ def build_all(manifest_file: str, mode: str = "applier"):
         raise RuntimeError("No final output tensor produced")
 
     out_path = os.path.join("onnx_out", manifest["canonical_name"], f"{mode}.onnx")
-    save_model(nodes, inits, vis, graph_inputs, final_out, out_path, manifest["canonical_name"])
+    save_model(nodes, inits, vis, graph_inputs, final_out, out_path, manifest["canonical_name"], all_function_defs)
 
 if __name__ == "__main__":
     #reg = Registry()

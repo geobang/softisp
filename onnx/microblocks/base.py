@@ -1,33 +1,75 @@
 # microblocks/base.py
 import onnx
 import onnx.helper as oh
-from dataclasses import dataclass, field
 from microblocks.registry import Registry
 
-@dataclass
+import onnx
+import onnx.helper as oh
+import inspect
+
 class BuildResult:
-    outputs: dict
-    nodes: list
-    inits: list
-    vis: list
-    inputs: dict = field(default_factory=dict)
+    def __init__(self, outputs, nodes, inits, vis, inputs=None, owner_cls=None):
+        # If no owner class is passed, capture from caller
+        if owner_cls is None:
+            frame = inspect.currentframe().f_back
+            caller_self = frame.f_locals.get("self")
+            if caller_self is not None:
+                owner_cls = caller_self.__class__
 
-    def __init__(self, outputs, nodes, inits, vis, inputs=None):
-        self.outputs = outputs
-        self.nodes = nodes
-        self.inits = inits
-        self.vis = vis
-        self.inputs = inputs if inputs is not None else {}
+        self._owner_cls = owner_cls
 
-    # 🔹 Helper methods for symmetry
-    def appendInput(self, name: str, desc: str = None):
-        self.inputs[name] = {"name": name, "desc": desc}
+        # Internal reference copies
+        self._ref_outputs = dict(outputs)
+        self._ref_nodes   = list(nodes)
+        self._ref_inits   = list(inits)
+        self._ref_vis     = list(vis)
+        self._ref_inputs  = dict(inputs) if inputs else {}
+
+        # Working view
+        self.func  = None
+        self.call  = None
+        self._regenerate()
+
+    def _regenerate(self):
+        """Reset working view from internal references and regenerate function + call node."""
+        self.outputs = dict(self._ref_outputs)
+        self.nodes   = list(self._ref_nodes)
+        self.inits   = list(self._ref_inits)
+        self.vis     = list(self._ref_vis)
+        self.inputs  = dict(self._ref_inputs)
+
+        func_name = f"{self._owner_cls.__name__}_{getattr(self._owner_cls, 'version', 'v0')}"
+        self.func, self.call = self._to_function_and_call(func_name)
+        self.nodes = [self.call]  # replace with call node
+
+    def appendInput(self, name: str, shape=None, desc: str = None):
+        self._ref_inputs[name] = {"name": name, "shape": shape, "desc": desc}
+        self._regenerate()
         return self
 
-    def appendOutput(self, name: str, desc: str = None):
-        self.outputs[name] = {"name": name, "desc": desc}
+    def appendOutput(self, name: str, shape=None, desc: str = None):
+        self._ref_outputs[name] = {"name": name, "shape": shape, "desc": desc}
+        self._regenerate()
         return self
 
+    def _to_function_and_call(self, func_name: str):
+        input_names  = [inp["name"] for inp in self._ref_inputs.values()]
+        output_names = [out["name"] for out in self._ref_outputs.values()]
+
+        func_nodes = list(self._ref_nodes)
+        for tensor in self._ref_inits:
+            const_node = oh.make_node("Constant", inputs=[], outputs=[tensor.name], value=tensor)
+            func_nodes.append(const_node)
+
+        func = onnx.FunctionProto()
+        func.name = func_name
+        func.domain = "softisp" # 🔹 bounded domain inside BuildResult
+        func.input.extend(input_names)
+        func.output.extend(output_names)
+        func.node.extend(func_nodes)
+
+        call_node = oh.make_node(func_name, inputs=input_names, outputs=output_names, domain="softisp")
+        return func, call_node
 
 class MicroblockBase:
     """
