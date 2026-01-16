@@ -1,6 +1,7 @@
 import os, sys, json, logging, onnx
 import onnx.helper as oh
 from microblocks.registry import Registry
+from microblocks.base import BuildResult # new dataclass
 
 #REGISTRY, import_all_microblocks, dump_registry
 
@@ -73,11 +74,11 @@ def build_all(manifest_file: str, mode: str = "applier"):
         try:
 
             if mode == "applier":
-                outputs, stage_nodes, stage_inits, stage_vis = mb.get_build_applier(
+                result: BuildResult = mb.get_build_applier(
                     stage_name, prev_stages=spec.get("inputs", [])
                 )
             elif mode == "algo" and hasattr(mb, "build_algo"):
-                outputs, stage_nodes, stage_inits, stage_vis = mb.get_build_algo(
+                result: BuildResult = mb.get_build_algo(
                 stage_name, prev_stages=spec.get("inputs", [])
                 )
             else:
@@ -88,12 +89,12 @@ def build_all(manifest_file: str, mode: str = "applier"):
             logging.error(f"Exception in stage {stage_name} ({spec['class']} v{spec['version']}): {e}")
             raise
 
-        nodes.extend(stage_nodes)
-        inits.extend(stage_inits)
-        vis.extend(stage_vis)
+        nodes.extend(result.nodes)
+        inits.extend(result.inits)
+        vis.extend(result.vis)
 
         # Track produced tensors and candidate final output
-        for out in outputs.values():
+        for out in result.outputs.values():
             produced.add(out["name"])
             logging.debug(f"Produced tensor: {out['name']}")
             if out["name"].endswith(".applier") or out["name"].endswith(".image"):
@@ -101,7 +102,7 @@ def build_all(manifest_file: str, mode: str = "applier"):
 
         # Discover stage-scoped needs to seed as graph inputs, if present in ValueInfo
         # Convention: any ValueInfo named f"{stage}.{need_suffix}" that isn’t produced becomes a graph input.
-        for v in stage_vis:
+        for v in result.vis:
             name = v.name
             # Treat value_infos that look like needs (stage-scoped) and aren’t produced as inputs
             if name.startswith(f"{stage_name}.") and name not in produced:
