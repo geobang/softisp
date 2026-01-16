@@ -1,5 +1,6 @@
 # microblocks/registry.py
 import importlib, inspect, pkgutil, pathlib
+from onnx import TensorProto
 
 class MappingHandle:
     """
@@ -85,3 +86,11 @@ class Registry:
                 outputs = self._outputs_map[stage_name]["outputs"]
                 return MappingHandle(stage_name, class_name, outputs)
         raise KeyError(f"Family '{family_name}' not found in prev_stages")
+
+    # NEW: helper to check if a tensor name has already been produced
+    def has_output(self, name: str) -> bool:
+        for stage_spec in self._outputs_map.values():
+            outputs = stage_spec["outputs"]
+            if name in outputs.values():
+                return True
+        return False

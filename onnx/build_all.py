@@ -1,5 +1,6 @@
 import os, sys, json, logging, onnx
 import onnx.helper as oh
+from onnx import TensorProto
 from microblocks.registry import Registry
 from microblocks.base import BuildResult # new dataclass
 
@@ -80,12 +81,6 @@ def build_all(manifest_file: str, mode: str = "applier"):
     reg.clear_all_outputs()
     reg.set_dynamic_map(stages_spec)
 
-    # Seed the canonical input_image as a graph input (common convention)
-    input_image_vi = oh.make_tensor_value_info("input_image", onnx.TensorProto.FLOAT, ["N","C","H","W"])
-    graph_inputs.append(input_image_vi)
-    input_image_width_vi = oh.make_tensor_value_info("input_image.width", oh.TensorProto.FLOAT, 'n')
-    graph_inputs.append(input_image_width_vi)
-
     for stage_name, spec in stages_spec.items():
         mb_cls = reg.dump_registry()[(spec["class"], spec["version"])]
         mb = mb_cls()
@@ -118,6 +113,25 @@ def build_all(manifest_file: str, mode: str = "applier"):
         nodes.extend(result.nodes)
         inits.extend(result.inits)
         vis.extend(result.vis)
+
+        # -------------------------------
+        # NEW: promote inputs automatically
+        for inp in result.inputs.values():
+            name = inp["name"]
+            # if already produced by a previous stage, skip
+            if reg.has_output(name):
+                continue
+            if any(vi.name == name for vi in graph_inputs):
+                continue # already promoted once
+            # otherwise promote to graph input
+            graph_inputs.append(
+                oh.make_tensor_value_info(
+                    name,
+                    TensorProto.FLOAT,   # adjust type if needed
+                    inp.get("shape", ['n', 3, 'h/2', 'w/2'])
+            )
+        )
+        # -------------------------------
 
         # Track produced tensors and candidate final output
         for out in result.outputs.values():
