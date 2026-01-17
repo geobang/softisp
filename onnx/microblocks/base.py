@@ -154,3 +154,6 @@ class MicroblockBase:
         MicroblockBase.registry.register_outputs(stage, self.__class__.__name__, flat)
         self._attach_marker(result)
         return result
+
+    def getMapping(self, stage: str, prev_stages=None):
+        return Registry().getInstance().getMapping(str, prev_stages)
