@@ -1,82 +1,72 @@
+# bayernorm.py
 from microblocks.base import BuildResult, MicroblockBase
-import onnx
 import onnx.helper as oh
 from onnx import TensorProto
 
 class BayerNormBase(MicroblockBase):
     """
-    Normalizer microblock.
-    Consumes desc.image [n,c,h,w], selects the first image,
-    reshapes to [1,4,h,w], and normalizes raw values to [0,1].
+    BayerNorm Base Class
+    Input:  [n,1,h,w] float32 Bayer mosaic
+    Output: [n,1,h,w] normalized float in [0,1]
+    Purpose: Scale raw sensor values into canonical range for ISP stages.
     """
-    name = 'bayernorm_base'
-    version = 'v0'
+    version = "v0"
+    provides = ["applier"]
 
-    def build_applier(self, stage: str, prev_stages=None):
+    # Subclasses must override this
+    bit_depth: int = None
+
+    def build_algo(self, stage, prev_stages=None):
+        if self.bit_depth is None:
+            raise ValueError("bit_depth must be set in subclass")
+
         upstream = prev_stages[0] if prev_stages else stage
+        input_image = f"{upstream}.applier"
+        out_name    = f"{stage}.applier"
 
-        # Names
-        input_image  = f'{upstream}.applier'
-        starts       = f'{stage}.starts'
-        ends         = f'{stage}.ends'
-        axes         = f'{stage}.axes'
-        shape_tensor = f'{stage}.target_shape'
-        norm_scale   = f'{stage}.norm_scale'
+        max_val = (1 << self.bit_depth) - 1  # e.g. 1023 for 10‑bit, 4095 for 12‑bit
+        scale_const = f"{stage}.scale"
 
-        slice_out    = f'{stage}.sliced'
-        reshape_out  = f'{stage}.reshaped'
-        out_name     = f'{stage}.applier'
-
-        # Nodes
-        slice_node = oh.make_node(
-            'Slice',
-            inputs=[input_image, starts, ends, axes],
-            outputs=[slice_out],
-            name=f'{stage}_slice_first'
-        )
-
-        reshape_node = oh.make_node(
-            'Reshape',
-            inputs=[slice_out, shape_tensor],
-            outputs=[reshape_out],
-            name=f'{stage}_reshape'
-        )
-
-        div_node = oh.make_node(
-            'Div',
-            inputs=[reshape_out, norm_scale],
-            outputs=[out_name],
-            name=f'{stage}_normalize'
-        )
-
-        # ValueInfos (metadata)
-        vis = [
-            oh.make_tensor_value_info(input_image,  TensorProto.FLOAT, ['n', 'c', 'h', 'w']),
-            oh.make_tensor_value_info(starts,       TensorProto.INT64, [1]),
-            oh.make_tensor_value_info(ends,         TensorProto.INT64, [1]),
-            oh.make_tensor_value_info(axes,         TensorProto.INT64, [1]),
-            oh.make_tensor_value_info(shape_tensor, TensorProto.INT64, [4]),
-            oh.make_tensor_value_info(norm_scale,   TensorProto.FLOAT, []),
-            oh.make_tensor_value_info(slice_out,    TensorProto.FLOAT, ['n', 'c', 'h', 'w']),  # intermediate
-            oh.make_tensor_value_info(reshape_out,  TensorProto.FLOAT, ['1', '4', 'h', 'w']),  # intermediate
-            oh.make_tensor_value_info(out_name,     TensorProto.FLOAT, ['1', '4', 'h', 'w']),
+        # Divide input by scale constant
+        nodes = [
+            oh.make_node("Div", [input_image, scale_const],
+                         [out_name], name=f"{stage}_normalize")
         ]
 
-        outputs = {'applier': {'name': out_name}}
+        vis = [
+            oh.make_tensor_value_info(input_image, TensorProto.FLOAT, ["n",1,"h","w"]),
+            oh.make_tensor_value_info(out_name,    TensorProto.FLOAT, ["n",1,"h","w"]),
+        ]
 
-        # BuildResult + declare all external needs as function inputs
-        result = BuildResult(outputs, [slice_node, reshape_node, div_node], [], vis)
+        # Initializer for scale constant
+        init = [
+            oh.make_tensor(scale_const, TensorProto.FLOAT, [], [float(max_val)])
+        ]
+
+        outputs = {
+            "applier": {"name": out_name},
+            #"scale_factor": {"name": scale_const},
+        }
+
+        result = BuildResult(outputs, nodes, init, vis)
         result.appendInput(input_image)
-        result.appendInput(starts)
-        result.appendInput(ends)
-        result.appendInput(axes)
-        result.appendInput(shape_tensor)
-        result.appendInput(norm_scale)
         return result
 
-    def build_algo(self, stage: str, prev_stages=None):
-        """
-        Algo path mirrors applier for consistency.
-        Coordinator supplies slice/reshape params and norm_scale.
-        """
-        return self.build_applier(stage, prev_stages=prev_stages)
+    def build_coordinator(self, stage, prev_stages=None):
+        return BuildResult({}, [], [], [])
+
+    def build_applier(self, stage, prev_stages=None):
+        return self.build_algo(stage, prev_stages)
+
+
+# Subclasses for specific bit depths
+class BayerNorm10(BayerNormBase):
+    name = "bayernorm_10bit"
+    bit_depth = 10
+
+class BayerNorm12(BayerNormBase):
+    name = "bayernorm_12bit"
+    bit_depth = 12
+
+class BayerNormBaseV0(BayerNorm10):
+    name = "bayernorm_base"
