@@ -75,16 +75,19 @@ class Registry:
         Resolve a stage by family name + version from prev_stages.
         Returns a MappingHandle with .getParam().
         """
+
         for stage_name in prev_stages:
             if stage_name not in self._dynamic_map:
                 continue
+
             spec = self._dynamic_map[stage_name]
-            fam = spec["family"]
+            fam = spec.get("family") or spec.get("class")
             version = spec["version"]
             if fam == family_name:
                 class_name = self._outputs_map[stage_name]["class_name"]
                 outputs = self._outputs_map[stage_name]["outputs"]
                 return MappingHandle(stage_name, class_name, outputs)
+            continue
         raise KeyError(f"Family '{family_name}' not found in prev_stages")
 
     # NEW: helper to check if a tensor name has already been produced
